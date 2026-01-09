@@ -28,53 +28,53 @@ import {
 const PROJECTS = [
   {
     id: "atlas",
-    title: "Atlas",
-    tagline: "Knowledge graph for personal notes",
+    title: "Bone Fracture Identification",
+    tagline: "3 ML models for bone fracture detection",
     description:
-      "Atlas turns scattered notes into a linked knowledge graph with fast search, backlinks, and daily review queues.",
-    stack: ["React", "TypeScript", "SQLite"],
+      "Developed and evaluated three machine learning approaches for bone fracture detection, including classical feature-based models and deep learning architectures.",
+    stack: ["HOG+XGBoost", "YOLOv8", "ResNet-18"],
     links: {
       live: "https://example.com",
-      repo: "https://github.com/example",
+      repo: "https://github.com/k5y7",
     },
     highlights: [
-      "Instant search over 50k+ nodes",
-      "Backlinks + graph view",
-      "Offline-first sync",
+      "ResNet-18 CNN using transfer learning for binary classification",
+      "YOLOv8 for fracture localization and detection, deployed via web application",
+      "GitHub to manage collaboration and version control",
     ],
   },
   {
     id: "pulse",
-    title: "Pulse",
-    tagline: "Realtime dashboard for ops",
+    title: "MQTT Simulator",
+    tagline: "Realtime MQTT-based simulator",
     description:
       "Pulse aggregates metrics, incidents, and runbooks into a single real-time desktop dashboard.",
-    stack: ["Next.js", "Node", "Postgres"],
+    stack: ["Mosquitto", "Tkinter", "SimPy"],
     links: {
       live: "https://example.com",
-      repo: "https://github.com/example",
+      repo: "https://github.com/k5y7",
     },
     highlights: [
-      "Incident timeline + status badges",
-      "Role-based views",
-      "Exportable reports",
+      "Implemets MQTT QoS 1, simulated WIFI and BLE behaviors",
+      "GUI with interactive controls, node mobility, real-time statistics, visualization of message flow",
+      "Collaborated in a large team environment, balancing workloads through version control",
     ],
   },
   {
     id: "lumen",
-    title: "Lumen",
-    tagline: "Design system starter kit",
+    title: "Home Lab Infrastructure",
+    tagline: "Virtualized home lab, spanning many different machines",
     description:
-      "A compact design system with tokens, components, and accessibility defaults—built to ship quickly.",
-    stack: ["React", "Tailwind", "Storybook"],
+      "Home lab setup, uses a variety of different OS each with different software configured.",
+    stack: ["VMWare", "Docker", "Ansible"],
     links: {
       live: "https://example.com",
-      repo: "https://github.com/example",
+      repo: "https://github.com/k5y7",
     },
     highlights: [
-      "A11y-first components",
-      "Token-driven theming",
-      "Docs + examples",
+      "Includes Ubuntu, Azure Ubuntu, OpenBSD, FreeBSD, AIX, OpenIndiana",
+      "Automated configuration of services via Ansible, secure access using LDAP",
+      "Automatic Backups, NFS, etc",
     ],
   },
   {
@@ -86,22 +86,22 @@ const PROJECTS = [
     stack: ["Go", "GitHub Actions", "Docker"],
     links: {
       live: "https://example.com",
-      repo: "https://github.com/example",
+      repo: "https://github.com/k5y7",
     },
     highlights: ["Scaffold in seconds", "Plugin architecture", "Cross-platform"],
   },
 ];
 
 const ABOUT = {
-  name: "Your Name",
-  role: "Product Engineer",
-  location: "Los Angeles, CA",
+  name: "Kyle Merino",
+  role: "Computer Engineering Masters Student",
+  location: "San Diego, CA",
   blurb:
-    "I build fast, accessible products with a bias toward simple systems and polished UX. I like interactive interfaces that feel playful but purposeful.",
+    "I love learning new areas of Computer Science, from Machine Learning, to Systems Administration, all the way to Embedded Programming.",
   socials: {
-    website: "https://example.com",
-    github: "https://github.com/example",
-    email: "you@example.com",
+    website: "https://kylemerino.com",
+    github: "https://github.com/k5y7",
+    email: "kylemerino57@gmail.com",
   },
 };
 
