@@ -74,21 +74,21 @@ const PROJECTS = [
     highlights: [
       "Includes Ubuntu, Azure Ubuntu, OpenBSD, FreeBSD, AIX, OpenIndiana",
       "Automated configuration of services via Ansible, secure access using LDAP",
-      "Automatic Backups, NFS, etc",
+      "Automatic backups, NFS, DNS, Docker",
     ],
   },
   {
     id: "ember",
-    title: "Ember",
-    tagline: "CLI for developer workflows",
+    title: "Discord Music Bot",
+    tagline: "Interactive and command-driven bot",
     description:
-      "A delightful CLI that scaffolds projects, manages envs, and automates routine dev tasks.",
-    stack: ["Go", "GitHub Actions", "Docker"],
+      "Music streaming bot that listens to user commands and fulfills requests.",
+    stack: ["Python", "Discord API", "yt-dlp"],
     links: {
       live: "https://example.com",
       repo: "https://github.com/k5y7",
     },
-    highlights: ["Scaffold in seconds", "Plugin architecture", "Cross-platform"],
+    highlights: ["Supports real-time audio streaming", "Play/pause, queuing, clearing, automatic disconnect", "High scaleability to serve many users simultaneously"],
   },
 ];
 
