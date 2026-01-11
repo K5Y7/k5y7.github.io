@@ -15,6 +15,7 @@ import {
   Maximize2,
   ExternalLink,
   Star,
+  Droplet,
 } from "lucide-react";
 
 // ===============================
@@ -193,6 +194,7 @@ export default function DesktopPortfolio() {
 
   const [activeId, setActiveId] = useState<AppId | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const [pondMode, setPondMode] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -341,53 +343,71 @@ export default function DesktopPortfolio() {
             now={now}
             onOpen={(id) => openWindow(id)}
             accent={accent}
+            pondMode={pondMode}
+            onTogglePond={() => setPondMode((v) => !v)}
           />
 
-          <div className="flex">
-            <DesktopIcons
+          <AnimatePresence>
+            {pondMode && (
+              <motion.div
+                key="pond-overlay"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="fixed inset-0 z-20 bg-blue-500/45 backdrop-blur-sm"
+                aria-hidden="true"
+              />
+            )}
+          </AnimatePresence>
+
+          <div className={pondMode ? "pointer-events-none" : ""}>
+            <div className="flex">
+              <DesktopIcons
+                prefs={prefs}
+                onOpen={(id) => openWindow(id)}
+              />
+
+              <div className="relative flex-1">
+                {/* Windows layer */}
+                <AnimatePresence>
+                  {windows
+                    .slice()
+                    .sort((a, b) => a.z - b.z)
+                    .map((w) => (
+                      <DesktopWindow
+                        key={w.id}
+                        win={w}
+                        active={activeId === w.id}
+                        accent={accent}
+                        reduceMotion={prefs.reduceMotion}
+                        onFocus={() => focusWindow(w.id)}
+                        onClose={() => closeWindow(w.id)}
+                        onMinimize={() => toggleMinimize(w.id)}
+                        onMaximize={() => toggleMaximize(w.id)}
+                        onRect={(rect) => updateWindowRect(w.id, rect)}
+                      >
+                        <WindowContent
+                          id={w.id}
+                          onOpen={(id) => openWindow(id)}
+                          prefs={prefs}
+                          setPrefs={setPrefs}
+                        />
+                      </DesktopWindow>
+                    ))}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            <Dock
+              windows={windows}
+              activeId={activeId}
               prefs={prefs}
               onOpen={(id) => openWindow(id)}
+              onFocus={(id) => focusWindow(id)}
+              onToggleMin={(id) => toggleMinimize(id)}
             />
-
-            <div className="relative flex-1">
-              {/* Windows layer */}
-              <AnimatePresence>
-                {windows
-                  .slice()
-                  .sort((a, b) => a.z - b.z)
-                  .map((w) => (
-                    <DesktopWindow
-                      key={w.id}
-                      win={w}
-                      active={activeId === w.id}
-                      accent={accent}
-                      reduceMotion={prefs.reduceMotion}
-                      onFocus={() => focusWindow(w.id)}
-                      onClose={() => closeWindow(w.id)}
-                      onMinimize={() => toggleMinimize(w.id)}
-                      onMaximize={() => toggleMaximize(w.id)}
-                      onRect={(rect) => updateWindowRect(w.id, rect)}
-                    >
-                      <WindowContent
-                        id={w.id}
-                        onOpen={(id) => openWindow(id)}
-                        prefs={prefs}
-                        setPrefs={setPrefs}
-                      />
-                    </DesktopWindow>
-                  ))}
-              </AnimatePresence>
-            </div>
           </div>
-
-          <Dock
-            windows={windows}
-            activeId={activeId}
-            prefs={prefs}
-            onOpen={(id) => openWindow(id)}
-            onFocus={(id) => focusWindow(id)}
-            onToggleMin={(id) => toggleMinimize(id)}
-          />
         </div>
       </div>
     </div>
@@ -436,10 +456,14 @@ function TopBar({
   now,
   onOpen,
   accent,
+  pondMode,
+  onTogglePond,
 }: {
   now: Date;
   onOpen: (id: AppId) => void;
   accent: { ring: string; glow: string };
+  pondMode: boolean
+  onTogglePond: () => void;
 }) {
   const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const date = now.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
@@ -463,6 +487,19 @@ function TopBar({
               <Search className="h-4 w-4 opacity-80 group-hover:opacity-100" />
               Open
             </button>
+            <button
+              onClick={onTogglePond}
+              className={`group inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-1.5 text-xs shadow-sm ring-1 ${accent.ring} ${accent.glow} ${
+                pondMode
+                  ? "bg-blue-500/25 text-zinc-100 hover:bg-blue-500/30"
+                  : "bg-white/5 text-zinc-200 hover:bg-white/10"
+              }`}
+              title={pondMode ? "Disable Pond" : "Enable Pond"}
+            >
+              <Droplet className="h-4 w-4 opacity-80 group-hover:opacity-100" />
+              {pondMode ? "Pond On" : "Pond"}
+            </button>
+
             <div className="text-right">
               <div className="text-xs text-zinc-200">{time}</div>
               <div className="text-[11px] text-zinc-400">{date}</div>
