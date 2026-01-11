@@ -48,7 +48,7 @@ const PROJECTS = [
     title: "MQTT Simulator",
     tagline: "Realtime MQTT-based simulator",
     description:
-      "Pulse aggregates metrics, incidents, and runbooks into a single real-time desktop dashboard.",
+      "MQTT network simulator with the capability to perform network experiments and a simple GUI",
     stack: ["Mosquitto", "Tkinter", "SimPy"],
     links: {
       live: "https://example.com",
@@ -97,7 +97,7 @@ const ABOUT = {
   role: "Computer Engineering Masters Student",
   location: "San Diego, CA",
   blurb:
-    "I love learning new areas of Computer Science, from Machine Learning, to Systems Administration, all the way to Embedded Programming.",
+    "I love learning about new areas of Computer Science, from Machine Learning, to Systems Administration, all the way to Embedded Programming.",
   socials: {
     website: "https://kylemerino.com",
     github: "https://github.com/k5y7",
