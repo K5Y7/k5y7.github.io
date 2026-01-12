@@ -343,8 +343,6 @@ export default function DesktopPortfolio() {
             now={now}
             onOpen={(id) => openWindow(id)}
             accent={accent}
-            pondMode={pondMode}
-            onTogglePond={() => setPondMode((v) => !v)}
           />
 
           <AnimatePresence>
@@ -354,15 +352,15 @@ export default function DesktopPortfolio() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.25 }}
+                transition={{ duration: 1 }}
                 className="fixed inset-0 z-20 bg-blue-500/45 backdrop-blur-sm"
                 aria-hidden="true"
               />
             )}
           </AnimatePresence>
 
-          <div className={pondMode ? "pointer-events-none" : ""}>
-            <div className="flex">
+          <div className="flex">
+            <div className={pondMode ? "pointer-events-none" : ""}>  
               <DesktopIcons
                 prefs={prefs}
                 onOpen={(id) => openWindow(id)}
@@ -403,6 +401,8 @@ export default function DesktopPortfolio() {
               windows={windows}
               activeId={activeId}
               prefs={prefs}
+              pondMode={pondMode}
+              onTogglePond={() => setPondMode((v) => !v)}
               onOpen={(id) => openWindow(id)}
               onFocus={(id) => focusWindow(id)}
               onToggleMin={(id) => toggleMinimize(id)}
@@ -456,14 +456,10 @@ function TopBar({
   now,
   onOpen,
   accent,
-  pondMode,
-  onTogglePond,
 }: {
   now: Date;
   onOpen: (id: AppId) => void;
   accent: { ring: string; glow: string };
-  pondMode: boolean
-  onTogglePond: () => void;
 }) {
   const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const date = now.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
@@ -486,18 +482,6 @@ function TopBar({
             >
               <Search className="h-4 w-4 opacity-80 group-hover:opacity-100" />
               Open
-            </button>
-            <button
-              onClick={onTogglePond}
-              className={`group inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-1.5 text-xs shadow-sm ring-1 ${accent.ring} ${accent.glow} ${
-                pondMode
-                  ? "bg-blue-500/25 text-zinc-100 hover:bg-blue-500/30"
-                  : "bg-white/5 text-zinc-200 hover:bg-white/10"
-              }`}
-              title={pondMode ? "Disable Pond" : "Enable Pond"}
-            >
-              <Droplet className="h-4 w-4 opacity-80 group-hover:opacity-100" />
-              {pondMode ? "Pond On" : "Pond"}
             </button>
 
             <div className="text-right">
@@ -569,6 +553,8 @@ function Dock({
   windows,
   activeId,
   prefs,
+  pondMode,
+  onTogglePond,
   onOpen,
   onFocus,
   onToggleMin,
@@ -576,6 +562,8 @@ function Dock({
   windows: WindowState[];
   activeId: AppId | null;
   prefs: DesktopPrefs;
+  pondMode: boolean;
+  onTogglePond: () => void;
   onOpen: (id: AppId) => void;
   onFocus: (id: AppId) => void;
   onToggleMin: (id: AppId) => void;
@@ -593,9 +581,20 @@ function Dock({
     .slice()
     .sort((a, b) => a.title.localeCompare(b.title));
 
-  const dockItems = [...pinned, ...running.map((w) => ({ id: w.id, label: w.title, icon: w.icon }))];
+  const dockItems = [
+    ...pinned,
+    { id: "pond" as AppId, label: pondMode ? "Pond On" : "Pond", icon: <Droplet className="h-5 w-5" /> },
+    ...running.map((w) => ({ id: w.id, label: w.title, icon: w.icon })),
+  ];
 
   const onClick = (id: AppId) => {
+    if (pondMode && id !== ("pond" as AppId)) return;
+
+    if (id === ("pond" as AppId)) {
+      onTogglePond();
+      return;
+    }
+
     const exists = windows.find((w) => w.id === id);
     if (!exists) return onOpen(id);
 
