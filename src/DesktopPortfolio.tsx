@@ -194,7 +194,21 @@ export default function DesktopPortfolio() {
 
   const [activeId, setActiveId] = useState<AppId | null>(null);
   const [now, setNow] = useState(() => new Date());
-  const [pondMode, setPondMode] = useState(false);
+  type PondPhase = "off" | "filling" | "on" | "draining";
+  const [pondPhase, setPondPhase] = useState<PondPhase>("off");
+  const pondMode = pondPhase !== "off";
+
+  useEffect(() => {
+    if (pondPhase === "filling") {
+      const t = setTimeout(() => setPondPhase("on"), 600);
+      return () => clearTimeout(t);
+    }
+
+    if (pondPhase === "draining") {
+      const t = setTimeout(() => setPondPhase("off"), 600);
+      return () => clearTimeout(t);
+    }
+  }, [pondPhase]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -309,6 +323,8 @@ export default function DesktopPortfolio() {
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (pondMode) return;
+
       const isMac = navigator.platform.toLowerCase().includes("mac");
       const mod = isMac ? e.metaKey : e.ctrlKey;
       if (mod && e.key.toLowerCase() === "k") {
@@ -352,7 +368,7 @@ export default function DesktopPortfolio() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 1 }}
+                transition={{ duration: pondPhase === "draining" ? 0.5 : 0.6 }}
                 className="fixed inset-0 z-20 bg-blue-500/45 backdrop-blur-sm"
                 aria-hidden="true"
               />
@@ -402,7 +418,12 @@ export default function DesktopPortfolio() {
               activeId={activeId}
               prefs={prefs}
               pondMode={pondMode}
-              onTogglePond={() => setPondMode((v) => !v)}
+              onTogglePond={() => {
+                if (pondPhase === "filling" || pondPhase === "draining") return;
+
+                if (pondPhase === "off") setPondPhase("filling");
+                else if (pondPhase === "on") setPondPhase("draining");
+              }}
               onOpen={(id) => openWindow(id)}
               onFocus={(id) => focusWindow(id)}
               onToggleMin={(id) => toggleMinimize(id)}
