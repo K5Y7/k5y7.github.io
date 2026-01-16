@@ -15,6 +15,7 @@ import {
   Maximize2,
   ExternalLink,
   Star,
+  Droplet,
 } from "lucide-react";
 
 // ===============================
@@ -48,7 +49,7 @@ const PROJECTS = [
     title: "MQTT Simulator",
     tagline: "Realtime MQTT-based simulator",
     description:
-      "Pulse aggregates metrics, incidents, and runbooks into a single real-time desktop dashboard.",
+      "MQTT network simulator with the capability to perform network experiments and a simple GUI",
     stack: ["Mosquitto", "Tkinter", "SimPy"],
     links: {
       live: "https://example.com",
@@ -97,7 +98,7 @@ const ABOUT = {
   role: "Computer Engineering Masters Student",
   location: "San Diego, CA",
   blurb:
-    "I love learning new areas of Computer Science, from Machine Learning, to Systems Administration, all the way to Embedded Programming.",
+    "I love learning about new areas of Computer Science, from Machine Learning, to Systems Administration, all the way to Embedded Programming.",
   socials: {
     website: "https://kylemerino.com",
     github: "https://github.com/k5y7",
@@ -193,6 +194,21 @@ export default function DesktopPortfolio() {
 
   const [activeId, setActiveId] = useState<AppId | null>(null);
   const [now, setNow] = useState(() => new Date());
+  type PondPhase = "off" | "filling" | "on" | "draining";
+  const [pondPhase, setPondPhase] = useState<PondPhase>("off");
+  const pondMode = pondPhase !== "off";
+
+  useEffect(() => {
+    if (pondPhase === "filling") {
+      const t = setTimeout(() => setPondPhase("on"), 600);
+      return () => clearTimeout(t);
+    }
+
+    if (pondPhase === "draining") {
+      const t = setTimeout(() => setPondPhase("off"), 600);
+      return () => clearTimeout(t);
+    }
+  }, [pondPhase]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -307,6 +323,8 @@ export default function DesktopPortfolio() {
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (pondMode) return;
+
       const isMac = navigator.platform.toLowerCase().includes("mac");
       const mod = isMac ? e.metaKey : e.ctrlKey;
       if (mod && e.key.toLowerCase() === "k") {
@@ -343,51 +361,74 @@ export default function DesktopPortfolio() {
             accent={accent}
           />
 
+          <AnimatePresence>
+            {pondMode && (
+              <motion.div
+                key="pond-overlay"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: pondPhase === "draining" ? 0.5 : 0.6 }}
+                className="fixed inset-0 z-20 bg-blue-500/45 backdrop-blur-sm"
+                aria-hidden="true"
+              />
+            )}
+          </AnimatePresence>
+
           <div className="flex">
-            <DesktopIcons
-              prefs={prefs}
-              onOpen={(id) => openWindow(id)}
-            />
+            <div className={pondMode ? "pointer-events-none" : ""}>  
+              <DesktopIcons
+                prefs={prefs}
+                onOpen={(id) => openWindow(id)}
+              />
 
-            <div className="relative flex-1">
-              {/* Windows layer */}
-              <AnimatePresence>
-                {windows
-                  .slice()
-                  .sort((a, b) => a.z - b.z)
-                  .map((w) => (
-                    <DesktopWindow
-                      key={w.id}
-                      win={w}
-                      active={activeId === w.id}
-                      accent={accent}
-                      reduceMotion={prefs.reduceMotion}
-                      onFocus={() => focusWindow(w.id)}
-                      onClose={() => closeWindow(w.id)}
-                      onMinimize={() => toggleMinimize(w.id)}
-                      onMaximize={() => toggleMaximize(w.id)}
-                      onRect={(rect) => updateWindowRect(w.id, rect)}
-                    >
-                      <WindowContent
-                        id={w.id}
-                        onOpen={(id) => openWindow(id)}
-                        prefs={prefs}
-                        setPrefs={setPrefs}
-                      />
-                    </DesktopWindow>
-                  ))}
-              </AnimatePresence>
+              <div className="relative flex-1">
+                {/* Windows layer */}
+                <AnimatePresence>
+                  {windows
+                    .slice()
+                    .sort((a, b) => a.z - b.z)
+                    .map((w) => (
+                      <DesktopWindow
+                        key={w.id}
+                        win={w}
+                        active={activeId === w.id}
+                        accent={accent}
+                        reduceMotion={prefs.reduceMotion}
+                        onFocus={() => focusWindow(w.id)}
+                        onClose={() => closeWindow(w.id)}
+                        onMinimize={() => toggleMinimize(w.id)}
+                        onMaximize={() => toggleMaximize(w.id)}
+                        onRect={(rect) => updateWindowRect(w.id, rect)}
+                      >
+                        <WindowContent
+                          id={w.id}
+                          onOpen={(id) => openWindow(id)}
+                          prefs={prefs}
+                          setPrefs={setPrefs}
+                        />
+                      </DesktopWindow>
+                    ))}
+                </AnimatePresence>
+              </div>
             </div>
-          </div>
 
-          <Dock
-            windows={windows}
-            activeId={activeId}
-            prefs={prefs}
-            onOpen={(id) => openWindow(id)}
-            onFocus={(id) => focusWindow(id)}
-            onToggleMin={(id) => toggleMinimize(id)}
-          />
+            <Dock
+              windows={windows}
+              activeId={activeId}
+              prefs={prefs}
+              pondMode={pondMode}
+              onTogglePond={() => {
+                if (pondPhase === "filling" || pondPhase === "draining") return;
+
+                if (pondPhase === "off") setPondPhase("filling");
+                else if (pondPhase === "on") setPondPhase("draining");
+              }}
+              onOpen={(id) => openWindow(id)}
+              onFocus={(id) => focusWindow(id)}
+              onToggleMin={(id) => toggleMinimize(id)}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -463,6 +504,7 @@ function TopBar({
               <Search className="h-4 w-4 opacity-80 group-hover:opacity-100" />
               Open
             </button>
+
             <div className="text-right">
               <div className="text-xs text-zinc-200">{time}</div>
               <div className="text-[11px] text-zinc-400">{date}</div>
@@ -532,6 +574,8 @@ function Dock({
   windows,
   activeId,
   prefs,
+  pondMode,
+  onTogglePond,
   onOpen,
   onFocus,
   onToggleMin,
@@ -539,6 +583,8 @@ function Dock({
   windows: WindowState[];
   activeId: AppId | null;
   prefs: DesktopPrefs;
+  pondMode: boolean;
+  onTogglePond: () => void;
   onOpen: (id: AppId) => void;
   onFocus: (id: AppId) => void;
   onToggleMin: (id: AppId) => void;
@@ -556,9 +602,20 @@ function Dock({
     .slice()
     .sort((a, b) => a.title.localeCompare(b.title));
 
-  const dockItems = [...pinned, ...running.map((w) => ({ id: w.id, label: w.title, icon: w.icon }))];
+  const dockItems = [
+    ...pinned,
+    { id: "pond" as AppId, label: pondMode ? "Pond On" : "Pond", icon: <Droplet className="h-5 w-5" /> },
+    ...running.map((w) => ({ id: w.id, label: w.title, icon: w.icon })),
+  ];
 
   const onClick = (id: AppId) => {
+    if (pondMode && id !== ("pond" as AppId)) return;
+
+    if (id === ("pond" as AppId)) {
+      onTogglePond();
+      return;
+    }
+
     const exists = windows.find((w) => w.id === id);
     if (!exists) return onOpen(id);
 
