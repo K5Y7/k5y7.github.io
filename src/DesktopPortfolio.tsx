@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Pond from "./Pond";
 import {
   Briefcase,
   Folder,
@@ -165,6 +166,8 @@ type DesktopPrefs = {
   iconSize: "sm" | "md" | "lg";
 };
 
+export type PondPhase = "off" | "filling" | "on" | "draining";
+
 const ACCENTS: Record<DesktopPrefs["accent"], { ring: string; glow: string }> = {
   indigo: { ring: "ring-indigo-400/40", glow: "shadow-indigo-500/15" },
   emerald: { ring: "ring-emerald-400/40", glow: "shadow-emerald-500/15" },
@@ -194,7 +197,6 @@ export default function DesktopPortfolio() {
 
   const [activeId, setActiveId] = useState<AppId | null>(null);
   const [now, setNow] = useState(() => new Date());
-  type PondPhase = "off" | "filling" | "on" | "draining";
   const [pondPhase, setPondPhase] = useState<PondPhase>("off");
   const pondMode = pondPhase !== "off";
 
@@ -361,19 +363,7 @@ export default function DesktopPortfolio() {
             accent={accent}
           />
 
-          <AnimatePresence>
-            {pondMode && (
-              <motion.div
-                key="pond-overlay"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: pondPhase === "draining" ? 0.5 : 0.6 }}
-                className="fixed inset-0 z-20 bg-blue-500/45 backdrop-blur-sm"
-                aria-hidden="true"
-              />
-            )}
-          </AnimatePresence>
+          <Pond phase={pondPhase} />
 
           <div className="flex">
             <div className={pondMode ? "pointer-events-none" : ""}>  
