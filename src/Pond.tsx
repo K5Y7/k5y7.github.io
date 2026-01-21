@@ -1,5 +1,5 @@
 // src/Pond.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
@@ -82,7 +82,7 @@ function WaterPlane({ level }: { level: number }) {
     []
   );
 
-  useFrame((_, dt) => {
+  useFrame((_state, dt: number) => {
     if (!materialRef.current) return;
     materialRef.current.uniforms.uTime.value += dt;
     materialRef.current.uniforms.uLevel.value = level;

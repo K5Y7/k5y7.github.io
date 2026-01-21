@@ -563,7 +563,7 @@ function DesktopIcons({
 function Dock({
   windows,
   activeId,
-  prefs,
+  prefs: _prefs,
   pondMode,
   onTogglePond,
   onOpen,
