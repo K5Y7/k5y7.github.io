@@ -5,7 +5,19 @@ import * as THREE from "three";
 
 export type PondPhase = "off" | "filling" | "on" | "draining";
 
-export default function Pond({ phase }: { phase: PondPhase }) {
+type PondProps = {
+  phase: PondPhase;
+  backgroundImage: string | null;
+  isCapturing?: boolean;
+  onDrained?: () => void;
+};
+
+export default function Pond({
+  phase,
+  backgroundImage,
+  isCapturing,
+  onDrained,
+}: PondProps) {
   // Unmount only when fully off
   if (phase === "off") return null;
 
@@ -17,40 +29,65 @@ export default function Pond({ phase }: { phase: PondPhase }) {
         gl={{ antialias: true, alpha: true }}
         camera={{ position: [0, 0, 10], zoom: 100 }}
       >
-        <PondScene phase={phase} />
+        <PondScene
+          phase={phase}
+          backgroundImage={backgroundImage}
+          isCapturing={isCapturing}
+          onDrained={onDrained}
+        />
       </Canvas>
     </div>
   );
 }
 
-function PondScene({ phase }: { phase: PondPhase }) {
+type PondSceneProps = {
+  phase: PondPhase;
+  backgroundImage: string | null;
+  isCapturing?: boolean;
+  onDrained?: () => void;
+};
+
+function PondScene({ phase, backgroundImage, onDrained }: PondSceneProps) {
   const { viewport } = useThree();
 
   // Level represents “how close the water feels to the viewer”
   const [level, setLevel] = useState(phase === "on" ? 1 : 0);
+  const levelRef = useRef(level);
+  useEffect(() => {
+    levelRef.current = level;
+  }, [level]);
 
   useEffect(() => {
-    let raf = 0;
+  let raf = 0;
 
-    const from = level;
-    const to = phase === "draining" ? 0 : 1;
-    const dur = phase === "draining" ? 500 : 650;
-    const start = performance.now();
+  const from = levelRef.current;
+  const to = phase === "draining" ? 0 : 1;
+  const dur = phase === "draining" ? 500 : 650;
+  const start = performance.now();
 
-    const easeInOutCubic = (t: number) =>
-      t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const easeInOutCubic = (t: number) =>
+    t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-    const tick = (now: number) => {
-      const p = Math.min(1, (now - start) / dur);
-      const e = easeInOutCubic(p);
-      setLevel(from + (to - from) * e);
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
+  const tick = (now: number) => {
+    const p = Math.min(1, (now - start) / dur);
+    const e = easeInOutCubic(p);
+    const v = from + (to - from) * e;
 
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
+    setLevel(v);
+
+    if (p < 1) {
+      raf = requestAnimationFrame(tick);
+    } else {
+      setLevel(to);
+      if (phase === "draining" && to === 0) {
+        onDrained?.();
+      }
+    }
+  };
+
+  raf = requestAnimationFrame(tick);
+  return () => cancelAnimationFrame(raf);
+}, [phase, onDrained]);
 
   return (
     <>
@@ -60,12 +97,29 @@ function PondScene({ phase }: { phase: PondPhase }) {
         <meshBasicMaterial transparent opacity={0.08 + 0.12 * level} color="#000" />
       </mesh>
 
-      <WaterPlane level={level} />
+      <WaterPlane level={level} backgroundImage={backgroundImage}/>
     </>
   );
 }
 
-function WaterPlane({ level }: { level: number }) {
+function useDataUrlTexture(dataUrl: string | null) {
+  return useMemo(() => {
+    if (!dataUrl) return null;
+    const tex = new THREE.TextureLoader().load(dataUrl);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    return tex;
+  }, [dataUrl]);
+}
+
+type WaterPlaneProps = {
+  level: number;
+  backgroundImage: string | null;
+};
+
+function WaterPlane({ level, backgroundImage }: WaterPlaneProps) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const { viewport } = useThree();
 
@@ -73,11 +127,15 @@ function WaterPlane({ level }: { level: number }) {
   const z = THREE.MathUtils.lerp(-0.35, 0.0, level);
   const s = THREE.MathUtils.lerp(0.98, 1.02, level);
 
+  const sceneTex = useDataUrlTexture(backgroundImage);
+
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
       uLevel: { value: level },
       uTint: { value: new THREE.Color("#2b74ff") },
+      uSceneTex: { value: null as THREE.Texture | null },
+      uHasSceneTex: { value: 0 },
     }),
     []
   );
@@ -86,6 +144,8 @@ function WaterPlane({ level }: { level: number }) {
     if (!materialRef.current) return;
     materialRef.current.uniforms.uTime.value += dt;
     materialRef.current.uniforms.uLevel.value = level;
+    materialRef.current.uniforms.uSceneTex.value = sceneTex;
+    materialRef.current.uniforms.uHasSceneTex.value = sceneTex ? 1 : 0;
   });
 
   return (
@@ -110,6 +170,8 @@ function WaterPlane({ level }: { level: number }) {
           uniform float uTime;
           uniform float uLevel;
           uniform vec3 uTint;
+          uniform sampler2D uSceneTex;
+          uniform float uHasSceneTex;
 
           float waves(vec2 p) {
             float t = uTime;
@@ -134,8 +196,23 @@ function WaterPlane({ level }: { level: number }) {
             float h = waves(p) * strength;
             float highlight = smoothstep(0.05, 0.12, abs(h));
 
-            // Base color + highlights
-            vec3 col = uTint;
+            // Background: screenshot (if available) with refraction-like distortion.
+            vec2 uv = vUv;
+            vec2 distort = vec2(
+              sin((uv.y * 14.0) + uTime * 0.9),
+              sin((uv.x * 16.0) - uTime * 0.8)
+            ) * (0.006 * uLevel);
+
+            // Add some distortion from the wave height as well.
+            distort += vec2(h) * (0.02 * uLevel);
+
+            vec3 bg = uTint;
+            if (uHasSceneTex > 0.5) {
+              bg = texture2D(uSceneTex, uv + distort).rgb;
+            }
+
+            // Water tinting over background + highlights
+            vec3 col = mix(bg, uTint, 0.25 + 0.35 * uLevel);
             col += vec3(0.12, 0.18, 0.22) * highlight;
 
             // A little fresnel-like brightening near edges (adds realism)

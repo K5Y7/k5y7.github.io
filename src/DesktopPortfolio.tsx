@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Pond from "./Pond";
+import html2canvas from "html2canvas";
 import {
   Briefcase,
   Folder,
@@ -199,18 +200,36 @@ export default function DesktopPortfolio() {
   const [now, setNow] = useState(() => new Date());
   const [pondPhase, setPondPhase] = useState<PondPhase>("off");
   const pondMode = pondPhase !== "off";
+  const desktopRef = useRef<HTMLDivElement>(null);
+  const [pondBg, setPondBg] = useState<string | null>(null);
+  const [isCapturingPondBg, setIsCapturingPondBg] = useState(false);
 
   useEffect(() => {
     if (pondPhase === "filling") {
       const t = setTimeout(() => setPondPhase("on"), 600);
       return () => clearTimeout(t);
     }
-
-    if (pondPhase === "draining") {
-      const t = setTimeout(() => setPondPhase("off"), 600);
-      return () => clearTimeout(t);
-    }
   }, [pondPhase]);
+
+  const captureDesktop = async () => {
+    const el = desktopRef.current;
+    if (!el) return;
+
+    setIsCapturingPondBg(true);
+    try {
+      const canvas = await html2canvas(el, {
+        backgroundColor: null,
+        scale: window.devicePixelRatio,
+        useCORS: true,
+      });
+      setPondBg(canvas.toDataURL("image/png"));
+    } catch {
+      // If capture fails, pond still works (falls back to tinted overlay)
+      setPondBg(null);
+    } finally {
+      setIsCapturingPondBg(false);
+    }
+  };
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -355,6 +374,16 @@ export default function DesktopPortfolio() {
       <div className={"relative min-h-screen overflow-hidden"}>
         <Wallpaper kind={prefs.wallpaper} />
 
+        <Pond
+          phase={pondPhase}
+          backgroundImage={pondBg}
+          isCapturing={isCapturingPondBg}
+          onDrained={() => {
+            setPondPhase("off");
+            setPondBg(null);
+          }}
+        />
+
         {/* Desktop */}
         <div className="relative z-10 min-h-screen">
           <TopBar
@@ -362,8 +391,6 @@ export default function DesktopPortfolio() {
             onOpen={(id) => openWindow(id)}
             accent={accent}
           />
-
-          <Pond phase={pondPhase} />
 
           <div className="flex">
             <div className={pondMode ? "pointer-events-none" : ""}>  
@@ -411,8 +438,13 @@ export default function DesktopPortfolio() {
               onTogglePond={() => {
                 if (pondPhase === "filling" || pondPhase === "draining") return;
 
-                if (pondPhase === "off") setPondPhase("filling");
-                else if (pondPhase === "on") setPondPhase("draining");
+                if (pondPhase === "off") {
+                  setPondBg(null);
+                  setPondPhase("filling");     // start rising immediately
+                  void captureDesktop();       // capture in parallel
+                } else if (pondPhase === "on") {
+                  setPondPhase("draining");    // let Pond animate down
+                }
               }}
               onOpen={(id) => openWindow(id)}
               onFocus={(id) => focusWindow(id)}
