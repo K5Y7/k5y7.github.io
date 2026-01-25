@@ -22,7 +22,7 @@ export default function Pond({
   if (phase === "off") return null;
 
   return (
-    <div className="fixed inset-0 z-20 pointer-events-auto">
+    <div className="fixed inset-0 z-20 pointer-events-none">
       <Canvas
         orthographic
         dpr={[1, 2]}
@@ -127,6 +127,23 @@ function WaterPlane({ level, backgroundImage }: WaterPlaneProps) {
   const z = THREE.MathUtils.lerp(-0.35, 0.0, level);
   const s = THREE.MathUtils.lerp(0.98, 1.02, level);
 
+  // Mouse-driven ripple inputs (UV space)
+  const mouseUV = useRef(new THREE.Vector2(0.5, 0.5));
+  const mouseStrength = useRef(0);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      mouseUV.current.set(
+        e.clientX / window.innerWidth,
+        1 - e.clientY / window.innerHeight
+      );
+      mouseStrength.current = 1; // "kick" ripples on movement
+    };
+
+    window.addEventListener("mousemove", onMove);
+    return () => window.removeEventListener("mousemove", onMove);
+  }, []);
+
   const sceneTex = useDataUrlTexture(backgroundImage);
 
   const uniforms = useMemo(
@@ -136,16 +153,26 @@ function WaterPlane({ level, backgroundImage }: WaterPlaneProps) {
       uTint: { value: new THREE.Color("#2b74ff") },
       uSceneTex: { value: null as THREE.Texture | null },
       uHasSceneTex: { value: 0 },
+      uMouse: { value: new THREE.Vector2(0.5, 0.5) },
+      uMouseStrength: { value: 0 },
     }),
     []
   );
 
   useFrame((_state, dt: number) => {
     if (!materialRef.current) return;
-    materialRef.current.uniforms.uTime.value += dt;
-    materialRef.current.uniforms.uLevel.value = level;
-    materialRef.current.uniforms.uSceneTex.value = sceneTex;
-    materialRef.current.uniforms.uHasSceneTex.value = sceneTex ? 1 : 0;
+    const u = materialRef.current.uniforms;
+    u.uTime.value += dt;
+    u.uLevel.value = level;
+    u.uSceneTex.value = sceneTex;
+    u.uHasSceneTex.value = sceneTex ? 1 : 0;
+
+    // NEW: drive shader with mouse
+    u.uMouse.value.copy(mouseUV.current);
+    u.uMouseStrength.value = mouseStrength.current;
+
+    // smooth decay
+    mouseStrength.current *= 0.92;
   });
 
   return (
@@ -172,6 +199,8 @@ function WaterPlane({ level, backgroundImage }: WaterPlaneProps) {
           uniform vec3 uTint;
           uniform sampler2D uSceneTex;
           uniform float uHasSceneTex;
+          uniform vec2 uMouse;
+          uniform float uMouseStrength;
 
           float waves(vec2 p) {
             float t = uTime;
@@ -180,6 +209,12 @@ function WaterPlane({ level, backgroundImage }: WaterPlaneProps) {
             w += sin((p.y * 12.0) - t * 1.0) * 0.06;
             w += sin((p.x * 18.0 + p.y * 6.0) + t * 0.8) * 0.04;
             return w;
+          }
+
+          float cursorRipple(vec2 uv, vec2 mouse) {
+            float d = distance(uv, mouse);
+            float wave = sin(d * 40.0 - uTime * 6.0) * exp(-d * 10.0);
+            return wave;
           }
 
           void main() {
@@ -193,7 +228,13 @@ function WaterPlane({ level, backgroundImage }: WaterPlaneProps) {
             // Slight “zoom” in UV space as it approaches
             vec2 p = (vUv - 0.5) * (1.0 + uLevel * 0.10) + 0.5;
 
+            // base waves
             float h = waves(p) * strength;
+
+            // NEW: cursor ripple (scaled by uLevel so it’s subtle when pond is low)
+            float r = cursorRipple(p, uMouse) * uMouseStrength * (0.06 + 0.10 * uLevel);
+            h += r;
+
             float highlight = smoothstep(0.05, 0.12, abs(h));
 
             // Background: screenshot (if available) with refraction-like distortion.
