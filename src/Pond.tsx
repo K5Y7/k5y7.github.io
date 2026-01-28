@@ -90,11 +90,7 @@ function PondScene({ phase, backgroundImage, onDrained }: PondSceneProps) {
   return () => cancelAnimationFrame(raf);
 }, [phase, onDrained]);
 
-  const rippleTex = RippleSim({
-    enabled: phase === "on" || phase === "filling",
-    strength: 0.9,
-    simSize: 512,
-  } as any);
+  const [rippleTex, setRippleTex] = useState<THREE.Texture | null>(null);
 
   return (
     <>
@@ -104,7 +100,14 @@ function PondScene({ phase, backgroundImage, onDrained }: PondSceneProps) {
         <meshBasicMaterial transparent opacity={0.08 + 0.12 * level} color="#000" />
       </mesh>
 
-      <WaterPlane level={level} backgroundImage={backgroundImage}/>
+      <RippleSim
+        enabled={phase === "on" || phase === "filling"}
+        strength={0.9}
+        simSize={512}
+        onTexture={setRippleTex}
+      />
+
+      <WaterPlane level={level} backgroundImage={backgroundImage} rippleTex={rippleTex}/>
     </>
   );
 }
@@ -127,7 +130,7 @@ type WaterPlaneProps = {
   rippleTex: THREE.Texture | null;
 };
 
-function WaterPlane({ level, backgroundImage }: WaterPlaneProps) {
+function WaterPlane({ level, backgroundImage, rippleTex }: WaterPlaneProps) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const { viewport } = useThree();
 
@@ -241,41 +244,35 @@ function WaterPlane({ level, backgroundImage }: WaterPlaneProps) {
             return vec2(hR - hL, hU - hD);
           }
 
-          float cursorRipple(vec2 uv, vec2 mouse) {
-            float d = distance(uv, mouse);
-            float wave = sin(d * 40.0 - uTime * 6.0) * exp(-d * 10.0);
-            return wave;
-          }
-
           void main() {
             // “Toward viewer” effect:
             // - no vertical reveal
             // - water presence increases with uLevel
             // - wave intensity & highlights increase with uLevel
 
-            float strength = mix(0.18, 1.0, uLevel);
-
             // Slight “zoom” in UV space as it approaches
             vec2 p = (vUv - 0.5) * (1.0 + uLevel * 0.10) + 0.5;
 
-            // base waves
-            float h = waves(p) * strength;
+            // Global ripple height + gradient from simulation
+            float h = drift(p) + rippleH(p) * 0.20;
+            vec2 g = rippleGrad(p) * 0.35;
 
-            // NEW: cursor ripple (scaled by uLevel so it’s subtle when pond is low)
-            float r = cursorRipple(p, uMouse) * uMouseStrength * (0.06 + 0.10 * uLevel);
-            h += r;
-
-            float highlight = smoothstep(0.05, 0.12, abs(h));
+            // highlights based on ripple “energy”
+            float rippleEnergy = length(g);
+            float highlight = smoothstep(0.06, 0.22, rippleEnergy);
 
             // Background: screenshot (if available) with refraction-like distortion.
             vec2 uv = vUv;
-            vec2 distort = vec2(
-              sin((uv.y * 14.0) + uTime * 0.9),
-              sin((uv.x * 16.0) - uTime * 0.8)
-            ) * (0.006 * uLevel);
+            vec2 distort = g * (0.015 * uLevel);
 
-            // Add some distortion from the wave height as well.
-            distort += vec2(h) * (0.02 * uLevel);
+            // tiny background drift distortion so it’s not dead-still
+            distort += vec2(
+              sin((uv.y * 6.0) + uTime * 0.15),
+              sin((uv.x * 6.0) - uTime * 0.12)
+            ) * (0.0015 * uLevel);
+
+            // slight height-based push
+            distort += vec2(h) * (0.006 * uLevel);
 
             vec3 bg = uTint;
             if (uHasSceneTex > 0.5) {
@@ -313,10 +310,12 @@ function RippleSim({
   enabled,
   strength = 1.0,
   simSize = 512,
+  onTexture,
 }: {
   enabled: boolean;
   strength?: number;
   simSize?: number;
+  onTexture: (tex: THREE.Texture | null) => void;
 }) {
   const { gl } = useThree();
 
@@ -489,5 +488,13 @@ function RippleSim({
   });
 
   // output “latest” height texture
-  return read0.current.texture;
+  useEffect(() => {
+    onTexture(enabled ? read0.current.texture : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, onTexture]);
+
+  useFrame(() => {
+    onTexture(enabled ? read0.current.texture : null);
+  });
+  return null;
 }
