@@ -1,6 +1,6 @@
 // src/Pond.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal, Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useFBO } from "@react-three/drei";
 
@@ -9,14 +9,12 @@ export type PondPhase = "off" | "filling" | "on" | "draining";
 type PondProps = {
   phase: PondPhase;
   backgroundImage: string | null;
-  isCapturing?: boolean;
   onDrained?: () => void;
 };
 
 export default function Pond({
   phase,
   backgroundImage,
-  isCapturing,
   onDrained,
 }: PondProps) {
   // Unmount only when fully off
@@ -34,7 +32,6 @@ export default function Pond({
         <PondScene
           phase={phase}
           backgroundImage={backgroundImage}
-          isCapturing={isCapturing}
           onDrained={onDrained}
         />
       </Canvas>
@@ -45,7 +42,6 @@ export default function Pond({
 type PondSceneProps = {
   phase: PondPhase;
   backgroundImage: string | null;
-  isCapturing?: boolean;
   onDrained?: () => void;
 };
 
@@ -92,6 +88,7 @@ function PondScene({ phase, backgroundImage, onDrained }: PondSceneProps) {
 }, [phase, onDrained]);
 
   const [rippleTex, setRippleTex] = useState<THREE.Texture | null>(null);
+  const simSize = 512;
 
   return (
     <>
@@ -104,34 +101,58 @@ function PondScene({ phase, backgroundImage, onDrained }: PondSceneProps) {
       <RippleSim
         enabled={phase === "on" || phase === "filling"}
         strength={0.9}
-        simSize={512}
+        simSize={simSize}
         onTexture={setRippleTex}
       />
 
-      <WaterPlane level={level} backgroundImage={backgroundImage} rippleTex={rippleTex}/>
+      <WaterPlane level={level} backgroundImage={backgroundImage} rippleTex={rippleTex} rippleSimSize={simSize}/>
     </>
   );
 }
 
 function useDataUrlTexture(dataUrl: string | null) {
-  return useMemo(() => {
-    if (!dataUrl) return null;
-    const tex = new THREE.TextureLoader().load(dataUrl);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    tex.generateMipmaps = false;
-    return tex;
+  const [tex, setTex] = useState<THREE.Texture | null>(null);
+
+  useEffect(() => {
+    if (!dataUrl) {
+      setTex((prev) => {
+        prev?.dispose();
+        return null;
+      });
+      return;
+    }
+
+    const loader = new THREE.TextureLoader();
+    const t = loader.load(dataUrl, () => {
+      // loaded
+    });
+
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.minFilter = THREE.LinearFilter;
+    t.magFilter = THREE.LinearFilter;
+    t.generateMipmaps = false;
+
+    setTex((prev) => {
+      prev?.dispose();
+      return t;
+    });
+
+    return () => {
+      t.dispose();
+    };
   }, [dataUrl]);
+
+  return tex;
 }
 
 type WaterPlaneProps = {
   level: number;
   backgroundImage: string | null;
   rippleTex: THREE.Texture | null;
+  rippleSimSize: number;
 };
 
-function WaterPlane({ level, backgroundImage, rippleTex }: WaterPlaneProps) {
+function WaterPlane({ level, backgroundImage, rippleTex, rippleSimSize }: WaterPlaneProps) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const { viewport } = useThree();
 
@@ -146,24 +167,29 @@ function WaterPlane({ level, backgroundImage, rippleTex }: WaterPlaneProps) {
       uTime: { value: 0 },
       uLevel: { value: level },
       uTint: { value: new THREE.Color("#2b74ff") },
+
       uSceneTex: { value: null as THREE.Texture | null },
       uHasSceneTex: { value: 0 },
+
       uRippleTex: { value: null as THREE.Texture | null },
       uHasRipple: { value: 0 },
+      uRippleTexel: { value: new THREE.Vector2(1 / rippleSimSize, 1 / rippleSimSize) },
     }),
-    []
+    [rippleSimSize]
   );
 
   useFrame((_state, dt: number) => {
-    if (!materialRef.current) return;
-    const u = materialRef.current.uniforms;
-    u.uTime.value += dt;
-    u.uLevel.value = level;
-    u.uSceneTex.value = sceneTex;
-    u.uHasSceneTex.value = sceneTex ? 1 : 0;
+    const mat = materialRef.current;
+    if (!mat) return;
 
-    materialRef.current.uniforms.uRippleTex.value = rippleTex;
-    materialRef.current.uniforms.uHasRipple.value = rippleTex ? 1 : 0;
+    mat.uniforms.uTime.value += dt;
+    mat.uniforms.uLevel.value = level;
+
+    mat.uniforms.uSceneTex.value = sceneTex;
+    mat.uniforms.uHasSceneTex.value = sceneTex ? 1 : 0;
+
+    mat.uniforms.uRippleTex.value = rippleTex;
+    mat.uniforms.uHasRipple.value = rippleTex ? 1 : 0;
   });
 
   return (
@@ -185,19 +211,21 @@ function WaterPlane({ level, backgroundImage, rippleTex }: WaterPlaneProps) {
         fragmentShader={`
           precision highp float;
           varying vec2 vUv;
+
           uniform float uTime;
           uniform float uLevel;
           uniform vec3 uTint;
+
           uniform sampler2D uSceneTex;
           uniform float uHasSceneTex;
+
           uniform sampler2D uRippleTex;
           uniform float uHasRipple;
-
+          uniform vec2 uRippleTexel;
                     
           float drift(vec2 p){
-            // very subtle slow drift (keep pond mostly still)
             float t = uTime * 0.08;
-            float a = 0.015; // small
+            float a = 0.015;
             return sin((p.x*2.5) + t) * a + sin((p.y*2.2) - t*1.2) * a;
           }
 
@@ -210,7 +238,7 @@ function WaterPlane({ level, backgroundImage, rippleTex }: WaterPlaneProps) {
 
           vec2 rippleGrad(vec2 uv){
             if (uHasRipple < 0.5) return vec2(0.0);
-            vec2 e = vec2(1.0/512.0, 1.0/512.0); // match simSize
+            vec2 e = uRippleTexel;
             float hL = decodeH(texture2D(uRippleTex, uv - vec2(e.x,0.0)).r);
             float hR = decodeH(texture2D(uRippleTex, uv + vec2(e.x,0.0)).r);
             float hD = decodeH(texture2D(uRippleTex, uv - vec2(0.0,e.y)).r);
@@ -331,13 +359,10 @@ function RippleSim({
     gl.setRenderTarget(prevRT);
   }, [gl, rtA, rtB, rtC]);
 
-  // We need two previous states (t and t-1). We'll store:
-  // prev = readTex
-  // prevPrev = readTex2
-  // and write into writeRT
-  const read0 = useRef<THREE.WebGLRenderTarget>(rtA);
-  const read1 = useRef<THREE.WebGLRenderTarget>(rtB);
-  const write = useRef<THREE.WebGLRenderTarget>(rtC);
+  const rts = useMemo(() => [rtA, rtB, rtC] as const, [rtA, rtB, rtC]);
+  const prevIdx = useRef(0);
+  const prevPrevIdx = useRef(1);
+  const writeIdx = useRef(2);
 
   // scene/camera for full-screen sim quad
   const simScene = useMemo(() => new THREE.Scene(), []);
@@ -348,7 +373,6 @@ function RippleSim({
       uniforms: {
         uPrev: { value: null as THREE.Texture | null },
         uPrevPrev: { value: null as THREE.Texture | null },
-        uDt: { value: 1 / 60 },
         uTexel: { value: new THREE.Vector2(1 / simSize, 1 / simSize) },
         uMouse: { value: new THREE.Vector2(-10, -10) },
         uImpulse: { value: 0 },
@@ -371,10 +395,11 @@ function RippleSim({
         uniform sampler2D uPrev;
         uniform sampler2D uPrevPrev;
         uniform vec2 uTexel;
-        uniform float uDt;
+
         uniform vec2 uMouse;
         uniform float uImpulse;
         uniform float uImpulseRadius;
+
         uniform float uC;
         uniform float uDamping;
         uniform float uStrength;
@@ -398,9 +423,7 @@ function RippleSim({
           l += sampleH(uPrev, vUv + vec2(0.0, -uTexel.y));
           l -= 4.0 * h;
 
-          // wave equation step (discrete)
-          float c2 = (uC * uC);
-          float next = (2.0 * h - h1) + c2 * l;
+          float next = (2.0 * h - h1) + (uC * uC) * l;
 
           // damping (damps velocity)
           float vel = (h - h1);
@@ -421,12 +444,16 @@ function RippleSim({
     });
   }, [simSize, strength]);
 
-  const quad = useMemo(() => {
+  useEffect(() => {
     const geo = new THREE.PlaneGeometry(2, 2);
-    const m = mat;
-    const mesh = new THREE.Mesh(geo, m);
+    const mesh = new THREE.Mesh(geo, mat);
     simScene.add(mesh);
-    return mesh;
+
+    return () => {
+      simScene.remove(mesh);
+      geo.dispose();
+      // mat disposed by React/three when unmounting; fine to leave here
+    };
   }, [mat, simScene]);
 
   // Mouse velocity -> impulse strength
@@ -438,15 +465,19 @@ function RippleSim({
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       if (!enabled) return;
+
       const x = e.clientX / window.innerWidth;
       const y = 1.0 - e.clientY / window.innerHeight;
       mouseUv.current.set(x, y);
 
       const now = performance.now();
       const dt = Math.max(1, now - lastT.current);
+
       const dx = x - lastMouse.current.x;
       const dy = y - lastMouse.current.y;
+
       const speed = Math.sqrt(dx * dx + dy * dy) / (dt / 1000); // uv/sec
+
       lastMouse.current.set(x, y);
       lastT.current = now;
 
@@ -458,55 +489,46 @@ function RippleSim({
   }, [enabled]);
 
   useFrame((_s, dt) => {
-    if (!enabled) return;
+    if (!enabled) {
+      onTexture(null);
+      return;
+    }
 
     // ping-pong targets:
     // read0 = prev, read1 = prevPrev, write = output
-    const prev = read0.current;
-    const prevPrev = read1.current;
-
-    // pick a write target that's NOT read0 or read1
-    const a = rtA;
-    const b = rtB;
-    const c = rtC;
-
-    if (read0.current !== a && read1.current !== a) write.current = a;
-    else if (read0.current !== b && read1.current !== b) write.current = b;
-    else write.current = c;
+    const prev = rts[prevIdx.current];
+    const prevPrev = rts[prevPrevIdx.current];
+    const write = rts[writeIdx.current];
 
     mat.uniforms.uPrev.value = prev.texture;
     mat.uniforms.uPrevPrev.value = prevPrev.texture;
-    mat.uniforms.uDt.value = dt;
     mat.uniforms.uMouse.value.copy(mouseUv.current);
     mat.uniforms.uImpulse.value = impulse.current;
 
     // decay impulse so you get discrete “strokes”
     impulse.current *= 0.85;
 
-    gl.setRenderTarget(write.current);
+    const prevRT = gl.getRenderTarget();
     const prevClear = gl.getClearColor(new THREE.Color());
     const prevAlpha = gl.getClearAlpha();
-    gl.setClearColor(new THREE.Color(0.5, 0, 0), 1);
-    gl.clear(true, false, false);
 
+    gl.setClearColor(new THREE.Color(0.5, 0, 0), 1);
+    gl.setRenderTarget(write);
+    gl.clear(true, false, false);
     gl.render(simScene, simCam);
 
     gl.setClearColor(prevClear, prevAlpha);
-    gl.setRenderTarget(null);
+    gl.setRenderTarget(prevRT);
 
     // advance history: prevPrev <- prev, prev <- write
-    read1.current = prev;
-    read0.current = write.current;
-  });
+    const oldPrevIdx = prevIdx.current;
+    const oldPrevPrevIdx = prevPrevIdx.current;
 
-  // output “latest” height texture
-  useEffect(() => {
-    onTexture(enabled ? read0.current.texture : null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, onTexture]);
+    prevPrevIdx.current = oldPrevIdx;
+    prevIdx.current = writeIdx.current;
+    writeIdx.current = oldPrevPrevIdx;
 
-  useFrame(() => {
-    onTexture(enabled ? read0.current.texture : null);
+    onTexture(rts[prevIdx.current].texture);
   });
   return null;
 }
