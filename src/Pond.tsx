@@ -462,6 +462,9 @@ function RippleSim({
   const lastT = useRef(performance.now());
   const impulse = useRef(0);
 
+  const baseRadius = 0.02;
+  const impulseRadius = useRef(baseRadius);
+
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       if (!enabled) return;
@@ -488,6 +491,30 @@ function RippleSim({
     return () => window.removeEventListener("pointermove", onMove);
   }, [enabled]);
 
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (!enabled) return;
+
+      const x = e.clientX / window.innerWidth;
+      const y = 1.0 - e.clientY / window.innerHeight;
+
+      mouseUv.current.set(x, y);
+
+      // Big splash on click
+      impulse.current = Math.max(impulse.current, 1.25);
+
+      // Slightly larger splat radius for clicks (then it eases back)
+      impulseRadius.current = 0.04;
+
+      // keep velocity bookkeeping sane
+      lastMouse.current.set(x, y);
+      lastT.current = performance.now();
+    };
+
+    window.addEventListener("pointerdown", onDown, { passive: true });
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, [enabled]);
+
   useFrame((_s, dt) => {
     if (!enabled) {
       onTexture(null);
@@ -504,9 +531,13 @@ function RippleSim({
     mat.uniforms.uPrevPrev.value = prevPrev.texture;
     mat.uniforms.uMouse.value.copy(mouseUv.current);
     mat.uniforms.uImpulse.value = impulse.current;
+    mat.uniforms.uImpulseRadius.value = impulseRadius.current;
 
     // decay impulse so you get discrete “strokes”
     impulse.current *= 0.85;
+
+    // ease click radius back to normal
+    impulseRadius.current = THREE.MathUtils.lerp(impulseRadius.current, baseRadius, 0.18);
 
     const prevRT = gl.getRenderTarget();
     const prevClear = gl.getClearColor(new THREE.Color());
