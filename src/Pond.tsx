@@ -104,11 +104,212 @@ function PondScene({ phase, backgroundImage, onDrained }: PondSceneProps) {
         simSize={simSize}
         onTexture={setRippleTex}
       />
+      {/* Leaves: subtle floating sprites under the water surface */}
+      <LeafSystem
+        enabled={phase === "on" || phase === "filling"}
+        level={level}
+        maxLeaves={9}
+        spawnEvery={[2.5, 6.5]}
+      />
 
       <WaterPlane level={level} backgroundImage={backgroundImage} rippleTex={rippleTex} rippleSimSize={simSize}/>
     </>
   );
 }
+
+
+// -------------------------
+// LeafSystem: occasionally spawns a few floating leaves that drift across the pond.
+// - Uses an instanced mesh for performance.
+// - Keeps a hard cap (maxLeaves) + randomized spawn intervals so it doesn't crowd.
+// -------------------------
+type LeafSystemProps = {
+  enabled: boolean;
+  level: number;
+  maxLeaves?: number;
+  spawnEvery?: [number, number]; // seconds, [min,max]
+};
+
+type Leaf = {
+  id: number;
+  x: number;
+  y: number;
+  s: number;
+  r: number;
+  vx: number;
+  wobble: number;
+};
+
+function LeafSystem({ enabled, level, maxLeaves = 8, spawnEvery = [3, 7] }: LeafSystemProps) {
+  const { viewport } = useThree();
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+
+  const leavesRef = useRef<Leaf[]>([]);
+  const idRef = useRef(1);
+  const nextSpawnAt = useRef(0);
+  const tmpObj = useMemo(() => new THREE.Object3D(), []);
+
+  const leafTex = useMemo(() => {
+    if (typeof document === "undefined") return null;
+
+    // Tiny canvas texture (keeps bundle small vs importing images)
+    const size = 128;
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.clearRect(0, 0, size, size);
+
+    // Leaf body (teardrop-ish)
+    ctx.translate(size / 2, size / 2);
+    ctx.rotate(-0.35);
+
+    const grad = ctx.createRadialGradient(-10, -10, 8, 0, 0, 60);
+    grad.addColorStop(0, "rgba(170, 220, 150, 0.95)");
+    grad.addColorStop(1, "rgba(50, 120, 75, 0.92)");
+    ctx.fillStyle = grad;
+
+    ctx.beginPath();
+    // A simple bezier leaf silhouette
+    ctx.moveTo(-8, -26);
+    ctx.bezierCurveTo(26, -20, 32, 12, 0, 30);
+    ctx.bezierCurveTo(-34, 16, -32, -12, -8, -26);
+    ctx.closePath();
+    ctx.fill();
+
+    // Midrib
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(-6, -22);
+    ctx.quadraticCurveTo(10, -2, 4, 26);
+    ctx.stroke();
+
+    // Soft edge highlight
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-10, -24);
+    ctx.bezierCurveTo(22, -20, 26, 10, 0, 26);
+    ctx.stroke();
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    return tex;
+  }, []);
+
+  // Reset when disabled
+  useEffect(() => {
+    if (enabled) return;
+    leavesRef.current = [];
+    nextSpawnAt.current = 0;
+  }, [enabled]);
+
+  const spawnLeaf = () => {
+    const w = viewport.width;
+    const h = viewport.height;
+    const margin = 0.65;
+
+    // Avoid crowding: don't spawn if there is already a leaf close to the spawn edge
+    const tooClose = leavesRef.current.some((l) => l.x < -w / 2 + 1.2);
+    if (tooClose && leavesRef.current.length >= Math.max(3, Math.floor(maxLeaves / 2))) return;
+
+    const s = THREE.MathUtils.lerp(0.13, 0.26, Math.random());
+    const y = THREE.MathUtils.lerp(-h / 2 + 0.6, h / 2 - 0.6, Math.random());
+    const vx = THREE.MathUtils.lerp(0.10, 0.22, Math.random());
+
+    leavesRef.current.push({
+      id: idRef.current++,
+      x: -w / 2 - margin,
+      y,
+      s,
+      r: THREE.MathUtils.lerp(-Math.PI, Math.PI, Math.random()),
+      vx,
+      wobble: Math.random() * Math.PI * 2,
+    });
+  };
+
+  useFrame(({ clock }, dt) => {
+    if (!enabled || !meshRef.current || !materialRef.current || !leafTex) return;
+
+    // Opacity follows water level a bit so leaves "appear" as the pond rises.
+    materialRef.current.opacity = THREE.MathUtils.lerp(0.0, 0.85, level);
+
+    const now = clock.getElapsedTime();
+    const w = viewport.width;
+    const h = viewport.height;
+    const margin = 0.8;
+
+    if (nextSpawnAt.current === 0) {
+      nextSpawnAt.current = now + THREE.MathUtils.lerp(spawnEvery[0], spawnEvery[1], Math.random());
+    }
+
+    // Spawn at most one leaf per interval, and only if under the cap.
+    if (now >= nextSpawnAt.current && leavesRef.current.length < maxLeaves) {
+      spawnLeaf();
+      nextSpawnAt.current = now + THREE.MathUtils.lerp(spawnEvery[0], spawnEvery[1], Math.random());
+    }
+
+    // Move + bob
+    for (const l of leavesRef.current) {
+      l.x += l.vx * dt;
+      l.y += Math.sin(now * 0.35 + l.wobble) * 0.03 * dt * 60.0;
+      l.r += Math.sin(now * 0.25 + l.wobble) * 0.004 * dt * 60.0;
+    }
+
+    // Cull offscreen
+    leavesRef.current = leavesRef.current.filter(
+      (l) => l.x < w / 2 + margin && l.y > -h / 2 - margin && l.y < h / 2 + margin
+    );
+
+    // Write instance matrices
+    const count = Math.min(leavesRef.current.length, maxLeaves);
+    const waterZ = THREE.MathUtils.lerp(-0.35, 0.0, level);
+
+    for (let i = 0; i < count; i++) {
+      const l = leavesRef.current[i];
+      // Always keep leaves just *under* the water surface
+      tmpObj.position.set(l.x, l.y, waterZ - 0.01);
+      tmpObj.rotation.set(0, 0, l.r);
+      tmpObj.scale.set(l.s, l.s, 1);
+      tmpObj.updateMatrix();
+      meshRef.current.setMatrixAt(i, tmpObj.matrix);
+    }
+
+    meshRef.current.count = count;
+    meshRef.current.instanceMatrix.needsUpdate = true;
+  });
+
+  if (!leafTex) return null;
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined as any, undefined as any, maxLeaves]}
+      frustumCulled={false}
+      renderOrder={1}
+    >
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial
+        ref={materialRef}
+        map={leafTex}
+        transparent
+        opacity={0.0}
+        depthWrite={false}
+        toneMapped={false}
+      />
+    </instancedMesh>
+  );
+}
+
+
 
 function useDataUrlTexture(dataUrl: string | null) {
   const [tex, setTex] = useState<THREE.Texture | null>(null);
@@ -193,7 +394,7 @@ function WaterPlane({ level, backgroundImage, rippleTex, rippleSimSize }: WaterP
   });
 
   return (
-    <mesh position={[0, 0, z]} scale={[s, s, 1]}>
+    <mesh position={[0, 0, z]} scale={[s, s, 1]} renderOrder={2}>
       {/* Fullscreen plane in viewport units */}
       <planeGeometry args={[viewport.width, viewport.height, 1, 1]} />
       <shaderMaterial
