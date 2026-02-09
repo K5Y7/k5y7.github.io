@@ -108,7 +108,7 @@ function PondScene({ phase, backgroundImage, onDrained }: PondSceneProps) {
       <LeafSystem
         enabled={phase === "on" || phase === "filling"}
         level={level}
-        rippleTex ={rippleTex}
+        rippleTex={rippleTex}
         simSize={simSize}
         maxLeaves={9}
         spawnEvery={[2.5, 6.5]}
@@ -297,6 +297,7 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
         }
       `,
     });
+
     mat.toneMapped = false;
     return mat;
   }, [leafTex, simSize, viewport.width, viewport.height]);
@@ -343,7 +344,7 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
     leafMat.uniforms.uRippleTex.value = rippleTex;
     leafMat.uniforms.uHasRipple.value = rippleTex ? 1.0 : 0.0;
 
-    leafMat.uniforms.uOpacity.value = THREE.MathUtils.lerp(0.0, 0.9, level);
+    leafMat.uniforms.uOpacity.value = 1.0
 
     if (nextSpawnAt.current === 0) {
     // Spawn quickly once so it never looks "broken" (otherwise you may wait several seconds).
@@ -403,10 +404,9 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
     <instancedMesh
       ref={meshRef}
       // r3f InstancedMesh ctor signature: (geometry, material, count)
-      args={[undefined as any, undefined as any, maxLeaves]}
+      args={[null as any, null as any, maxLeaves]}
       frustumCulled={false}
       renderOrder={2}
-
     >
       <planeGeometry args={[1, 1]} />
       <primitive object={leafMat} attach="material" />

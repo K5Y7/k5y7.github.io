@@ -202,7 +202,6 @@ export default function DesktopPortfolio() {
   const pondMode = pondPhase !== "off";
   const desktopRef = useRef<HTMLDivElement>(null);
   const [pondBg, setPondBg] = useState<string | null>(null);
-  const [isCapturingPondBg, setIsCapturingPondBg] = useState(false);
 
   useEffect(() => {
     if (pondPhase === "filling") {
@@ -215,7 +214,6 @@ export default function DesktopPortfolio() {
     const el = desktopRef.current;
     if (!el) return;
 
-    setIsCapturingPondBg(true);
     try {
       const canvas = await html2canvas(el, {
         backgroundColor: null,
@@ -226,8 +224,6 @@ export default function DesktopPortfolio() {
     } catch {
       // If capture fails, pond still works (falls back to tinted overlay)
       setPondBg(null);
-    } finally {
-      setIsCapturingPondBg(false);
     }
   };
 
@@ -377,7 +373,6 @@ export default function DesktopPortfolio() {
         <Pond
           phase={pondPhase}
           backgroundImage={pondBg}
-          isCapturing={isCapturingPondBg}
           onDrained={() => {
             setPondPhase("off");
             setPondBg(null);
