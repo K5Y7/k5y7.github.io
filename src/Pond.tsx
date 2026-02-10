@@ -771,23 +771,34 @@ function RippleSim({
   const baseRadius = 0.02;
   const impulseRadius = useRef(baseRadius);
 
+  const getUvFromEvent = (e: PointerEvent) => {
+    const rect = gl.domElement.getBoundingClientRect();
+
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = 1.0 - (e.clientY - rect.top) / rect.height;
+
+    return new THREE.Vector2(
+      THREE.MathUtils.clamp(x, 0, 1),
+      THREE.MathUtils.clamp(y, 0, 1)
+    );
+  };
+
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       if (!enabled) return;
 
-      const x = e.clientX / window.innerWidth;
-      const y = 1.0 - e.clientY / window.innerHeight;
-      mouseUv.current.set(x, y);
+      const uv = getUvFromEvent(e);
+      mouseUv.current.copy(uv);
 
       const now = performance.now();
       const dt = Math.max(1, now - lastT.current);
 
-      const dx = x - lastMouse.current.x;
-      const dy = y - lastMouse.current.y;
+      const dx = uv.x - lastMouse.current.x;
+      const dy = uv.y - lastMouse.current.y;
 
       const speed = Math.sqrt(dx * dx + dy * dy) / (dt / 1000); // uv/sec
 
-      lastMouse.current.set(x, y);
+      lastMouse.current.copy(uv);
       lastT.current = now;
 
       // map speed -> impulse (tweak)
@@ -801,10 +812,8 @@ function RippleSim({
     const onDown = (e: PointerEvent) => {
       if (!enabled) return;
 
-      const x = e.clientX / window.innerWidth;
-      const y = 1.0 - e.clientY / window.innerHeight;
-
-      mouseUv.current.set(x, y);
+      const uv = getUvFromEvent(e);
+      mouseUv.current.copy(uv);
 
       // Big splash on click
       impulse.current = Math.max(impulse.current, 1.25);
@@ -813,7 +822,7 @@ function RippleSim({
       impulseRadius.current = 0.04;
 
       // keep velocity bookkeeping sane
-      lastMouse.current.set(x, y);
+      lastMouse.current.copy(uv);
       lastT.current = performance.now();
     };
 
