@@ -561,9 +561,11 @@ function WaterPlane({ level, backgroundImage, rippleTex, rippleSimSize }: WaterP
             // Slight “zoom” in UV space as it approaches
             vec2 p = (vUv - 0.5) * (1.0 + uLevel * 0.10) + 0.5;
 
+            vec2 rUv = vUv;
+
             // Global ripple height + gradient from simulation
-            float h = drift(p) + rippleH(p) * 0.45;
-            vec2 g = rippleGrad(p) * 0.85;
+            float h = drift(p) + rippleH(rUv) * 0.45;
+            vec2 g = rippleGrad(rUv) * 0.85;
 
             // highlights based on ripple “energy”
             float rippleEnergy = length(g);
