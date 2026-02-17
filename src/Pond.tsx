@@ -203,7 +203,7 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
   // --- Leaf shader material that samples rippleTex ---
   const leafMat = useMemo(() => {
     if (!leafTex) return null;
-
+    
     const mat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
@@ -229,6 +229,7 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
 
         attribute vec3 position;
         attribute vec2 uv;
+        attribute mat4 instanceMatrix;
 
         uniform sampler2D uRippleTex;
         uniform float uHasRipple;
@@ -297,6 +298,8 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
         }
       `,
     });
+    mat.defines = { ...(mat.defines || {}), USE_INSTANCING: "" };
+    mat.needsUpdate = true;
 
     mat.toneMapped = false;
     return mat;
@@ -794,6 +797,10 @@ function RippleSim({
 
       const now = performance.now();
       const dt = Math.max(1, now - lastT.current);
+      if (now - lastT.current > 200) {
+        // after a pause, let the next motion create a visible ripple again
+        impulse.current = Math.max(impulse.current, 0.25);
+      }
 
       const dx = uv.x - lastMouse.current.x;
       const dy = uv.y - lastMouse.current.y;
@@ -804,7 +811,9 @@ function RippleSim({
       lastT.current = now;
 
       // map speed -> impulse (tweak)
-      impulse.current = Math.min(1.0, speed * 0.35);
+      const mapped = speed * 0.35;
+      const moved = Math.abs(dx) + Math.abs(dy) > 1e-5;
+      impulse.current = moved ? Math.max(impulse.current, Math.min(1.0, Math.max(0.08, mapped))) : impulse.current;
     };
     window.addEventListener("pointermove", onMove, { passive: true });
     return () => window.removeEventListener("pointermove", onMove);
