@@ -1,5 +1,5 @@
 // src/Pond.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useFBO } from "@react-three/drei";
@@ -203,7 +203,7 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
   // --- Leaf shader material that samples rippleTex ---
   const leafMat = useMemo(() => {
     if (!leafTex) return null;
-    
+
     const mat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
@@ -229,7 +229,6 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
 
         attribute vec3 position;
         attribute vec2 uv;
-        attribute mat4 instanceMatrix;
 
         uniform sampler2D uRippleTex;
         uniform float uHasRipple;
@@ -298,12 +297,10 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
         }
       `,
     });
-    mat.defines = { ...(mat.defines || {}), USE_INSTANCING: "" };
-    mat.needsUpdate = true;
 
     mat.toneMapped = false;
     return mat;
-  }, [leafTex, simSize, viewport.width, viewport.height]);
+  }, [leafTex, simSize]); // viewport dimensions are updated via uViewport uniform in useFrame — not needed here
 
   // Reset when disabled
   useEffect(() => {
@@ -633,21 +630,21 @@ function RippleSim({
   const { gl } = useThree();
 
   const rtA = useFBO(simSize, simSize, {
-    type: THREE.UnsignedByteType,
+    type: THREE.HalfFloatType,
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
     depthBuffer: false,
     stencilBuffer: false,
   });
   const rtB = useFBO(simSize, simSize, {
-    type: THREE.UnsignedByteType,
+    type: THREE.HalfFloatType,
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
     depthBuffer: false,
     stencilBuffer: false,
   });
   const rtC = useFBO(simSize, simSize, {
-    type: THREE.UnsignedByteType,
+    type: THREE.HalfFloatType,
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
     depthBuffer: false,
@@ -776,7 +773,7 @@ function RippleSim({
   const baseRadius = 0.02;
   const impulseRadius = useRef(baseRadius);
 
-  const getUvFromEvent = (e: PointerEvent) => {
+  const getUvFromEvent = useCallback((e: PointerEvent) => {
     const rect = gl.domElement.getBoundingClientRect();
 
     const x = (e.clientX - rect.left) / rect.width;
@@ -786,7 +783,7 @@ function RippleSim({
       THREE.MathUtils.clamp(x, 0, 1),
       THREE.MathUtils.clamp(y, 0, 1)
     );
-  };
+  }, [gl]);
 
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
@@ -797,10 +794,6 @@ function RippleSim({
 
       const now = performance.now();
       const dt = Math.max(1, now - lastT.current);
-      if (now - lastT.current > 200) {
-        // after a pause, let the next motion create a visible ripple again
-        impulse.current = Math.max(impulse.current, 0.25);
-      }
 
       const dx = uv.x - lastMouse.current.x;
       const dy = uv.y - lastMouse.current.y;
@@ -811,9 +804,7 @@ function RippleSim({
       lastT.current = now;
 
       // map speed -> impulse (tweak)
-      const mapped = speed * 0.35;
-      const moved = Math.abs(dx) + Math.abs(dy) > 1e-5;
-      impulse.current = moved ? Math.max(impulse.current, Math.min(1.0, Math.max(0.08, mapped))) : impulse.current;
+      impulse.current = Math.min(1.0, speed * 0.35);
     };
     window.addEventListener("pointermove", onMove, { passive: true });
     return () => window.removeEventListener("pointermove", onMove);

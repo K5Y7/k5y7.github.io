@@ -150,7 +150,8 @@ type AppId =
 type WindowState = {
   id: AppId;
   title: string;
-  icon: React.ReactNode;
+  // icon is intentionally excluded — React nodes are not JSON-serializable.
+  // Derive it at render time from `id` via getWindowIcon().
   z: number;
   minimized?: boolean;
   maximized?: boolean;
@@ -175,6 +176,17 @@ const ACCENTS: Record<DesktopPrefs["accent"], { ring: string; glow: string }> = 
   amber: { ring: "ring-amber-400/40", glow: "shadow-amber-500/15" },
   rose: { ring: "ring-rose-400/40", glow: "shadow-rose-500/15" },
 };
+
+// Derives a window's icon from its id at render time.
+// Never stored in state — React nodes are not JSON-serializable.
+function getWindowIcon(id: AppId): React.ReactNode {
+  if (id === "finder") return <Folder className="h-4 w-4" />;
+  if (id === "about") return <Info className="h-4 w-4" />;
+  if (id === "contact") return <Mail className="h-4 w-4" />;
+  if (id === "terminal") return <Terminal className="h-4 w-4" />;
+  if (id === "settings") return <Settings className="h-4 w-4" />;
+  return <Briefcase className="h-4 w-4" />;
+}
 
 // -------------------------------
 // Main Component
@@ -261,25 +273,9 @@ export default function DesktopPortfolio() {
           ? "Settings"
           : `Project — ${id.replace("project:", "")}`;
 
-      const icon =
-        id === "finder" ? (
-          <Folder className="h-4 w-4" />
-        ) : id === "about" ? (
-          <Info className="h-4 w-4" />
-        ) : id === "contact" ? (
-          <Mail className="h-4 w-4" />
-        ) : id === "terminal" ? (
-          <Terminal className="h-4 w-4" />
-        ) : id === "settings" ? (
-          <Settings className="h-4 w-4" />
-        ) : (
-          <Briefcase className="h-4 w-4" />
-        );
-
       const base: WindowState = {
         id,
         title,
-        icon,
         z: maxZ + 1,
         x: 72 + (prev.length % 6) * 28,
         y: 72 + (prev.length % 5) * 22,
@@ -430,13 +426,15 @@ export default function DesktopPortfolio() {
               activeId={activeId}
               prefs={prefs}
               pondMode={pondMode}
-              onTogglePond={() => {
+              onTogglePond={async () => {
                 if (pondPhase === "filling" || pondPhase === "draining") return;
 
                 if (pondPhase === "off") {
+                  // Capture first so the screenshot is clean (no water overlay yet),
+                  // then start the fill animation.
                   setPondBg(null);
-                  setPondPhase("filling");     // start rising immediately
-                  void captureDesktop();       // capture in parallel
+                  await captureDesktop();
+                  setPondPhase("filling");
                 } else if (pondPhase === "on") {
                   setPondPhase("draining");    // let Pond animate down
                 }
@@ -553,7 +551,6 @@ function DesktopIcons({
     {
       id: "finder" as const,
       label: "Projects",
-      icon: <Folder className={`$ {""} h-6 w-6`} />,
       glyph: <Folder className="h-6 w-6" />,
     },
     { id: "about" as const, label: "About", glyph: <Info className="h-6 w-6" /> },
@@ -622,7 +619,7 @@ function Dock({
   const dockItems = [
     ...pinned,
     { id: "pond" as AppId, label: pondMode ? "Pond On" : "Pond", icon: <Droplet className="h-5 w-5" /> },
-    ...running.map((w) => ({ id: w.id, label: w.title, icon: w.icon })),
+    ...running.map((w) => ({ id: w.id, label: w.title, icon: getWindowIcon(w.id) })),
   ];
 
   const onClick = (id: AppId) => {
@@ -834,7 +831,7 @@ function DesktopWindow({
         >
           <div className="flex items-center gap-2">
             <div className="grid h-7 w-7 place-items-center rounded-2xl border border-white/10 bg-white/5">
-              {win.icon}
+              {getWindowIcon(win.id)}
             </div>
             <div className="min-w-0">
               <div className="truncate text-sm text-zinc-100">{win.title}</div>
