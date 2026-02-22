@@ -277,8 +277,8 @@ export default function DesktopPortfolio() {
         id,
         title,
         z: maxZ + 1,
-        x: 72 + (prev.length % 6) * 28,
-        y: 72 + (prev.length % 5) * 22,
+        x: 97 + (prev.length % 6) * 28,
+        y: 25 + (prev.length % 6) * 28,
         w: 560,
         h: 420,
         minimized: false,
@@ -328,7 +328,12 @@ export default function DesktopPortfolio() {
   // Boot: open Projects if no windows saved
   useEffect(() => {
     if (windows.length === 0) {
-      openWindow("finder", { x: 88, y: 84, w: 620, h: 460 });
+      openWindow("finder", { 
+        x: 97, 
+        y: 25,
+        w: 620, 
+        h: 460 
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -383,14 +388,14 @@ export default function DesktopPortfolio() {
             accent={accent}
           />
 
-          <div className="flex">
+          <div className="flex relative">
             <div className={pondMode ? "pointer-events-none" : ""}>  
               <DesktopIcons
                 prefs={prefs}
                 onOpen={(id) => openWindow(id)}
               />
 
-              <div className="relative flex-1">
+              <div className="absolute inset-0 pointer-events-none">
                 {/* Windows layer */}
                 <AnimatePresence>
                   {windows
@@ -818,7 +823,7 @@ function DesktopWindow({
       exit={reduceMotion ? undefined : { opacity: 0, scale: 0.98, y: 10 }}
       transition={{ duration: 0.18 }}
       className={
-        `rounded-3xl border border-white/10 bg-zinc-950/55 backdrop-blur-xl shadow-2xl ` +
+        `pointer-events-auto rounded-3xl border border-white/10 bg-zinc-950/55 backdrop-blur-xl shadow-2xl ` +
         (active ? `ring-1 ${accent.ring} ${accent.glow}` : "")
       }
     >
