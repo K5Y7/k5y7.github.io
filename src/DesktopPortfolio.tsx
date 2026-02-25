@@ -367,8 +367,8 @@ export default function DesktopPortfolio() {
   }, [maxZ]);
 
   return (
-    <div className="min-h-screen w-full text-zinc-100 selection:bg-white/10 selection:text-white">
-      <div className={"relative min-h-screen overflow-hidden"}>
+    <div className="h-screen w-full overflow-hidden text-zinc-100 selection:bg-white/10 selection:text-white">
+      <div className={"relative h-full overflow-hidden"}>
         <Wallpaper kind={prefs.wallpaper} />
 
         <Pond
@@ -381,14 +381,14 @@ export default function DesktopPortfolio() {
         />
 
         {/* Desktop */}
-        <div className="relative z-10 min-h-screen">
+        <div className="relative z-10 h-full flex flex-col">
           <TopBar
             now={now}
             onOpen={(id) => openWindow(id)}
             accent={accent}
           />
 
-          <div className="flex relative">
+          <div className="flex relative flex-1 min-h-0">
             <div className={pondMode ? "pointer-events-none" : ""}>  
               <DesktopIcons
                 prefs={prefs}
