@@ -213,7 +213,18 @@ export default function DesktopPortfolio() {
   const [pondPhase, setPondPhase] = useState<PondPhase>("off");
   const pondMode = pondPhase !== "off";
   const desktopRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [pondBg, setPondBg] = useState<string | null>(null);
+
+  // Prevent focus-driven scroll on the root container.
+  // overflow:hidden does NOT block programmatic scroll caused by focus/scrollIntoView.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const onScroll = () => { el.scrollTop = 0; el.scrollLeft = 0; };
+    el.addEventListener("scroll", onScroll, { passive: false });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     if (pondPhase === "filling") {
@@ -273,19 +284,26 @@ export default function DesktopPortfolio() {
           ? "Settings"
           : `Project — ${id.replace("project:", "")}`;
 
+      // Normalize existing windows to 1..n, new window gets n+1.
+      const sorted = [...prev].sort((a, b) => a.z - b.z);
+      const normalized = sorted.map((w, i) => ({ ...w, z: i + 1 }));
+      const n = normalized.length;
+
+      const W = 560;
+      const H = 420;
       const base: WindowState = {
         id,
         title,
-        z: maxZ + 1,
-        x: 97 + (prev.length % 6) * 28,
-        y: 25 + (prev.length % 6) * 28,
-        w: 560,
-        h: 420,
+        z: n + 1,
+        x: 97 + (prev.length % 6) * 10,
+        y: 25 + (prev.length % 6) * 10,
+        w: W,
+        h: H,
         minimized: false,
         maximized: false,
       };
 
-      return [...prev, { ...base, ...def }];
+      return [...normalized, { ...base, ...def }];
     });
     setActiveId(id);
   };
@@ -297,8 +315,13 @@ export default function DesktopPortfolio() {
 
   const focusWindow = (id: AppId) => {
     setWindows((prev) => {
-      const mz = prev.reduce((m, w) => Math.max(m, w.z), 0);
-      return prev.map((w) => (w.id === id ? { ...w, z: mz + 1, minimized: false } : w));
+      // Normalize all z-indices to 1..n first, then give focused window n+1.
+      // This keeps window z-indices bounded to the number of open windows,
+      // so they can never climb past the TopBar / Dock z-index.
+      const sorted = [...prev].sort((a, b) => a.z - b.z);
+      const normalized = sorted.map((w, i) => ({ ...w, z: i + 1 }));
+      const n = normalized.length;
+      return normalized.map((w) => (w.id === id ? { ...w, z: n + 1, minimized: false } : w));
     });
     setActiveId(id);
   };
@@ -367,8 +390,8 @@ export default function DesktopPortfolio() {
   }, [maxZ]);
 
   return (
-    <div className="h-screen w-full overflow-hidden text-zinc-100 selection:bg-white/10 selection:text-white">
-      <div className={"relative h-full overflow-hidden"}>
+    <div className="fixed inset-0 overflow-hidden text-zinc-100 selection:bg-white/10 selection:text-white">
+      <div ref={rootRef} className={"relative h-full overflow-hidden"}>
         <Wallpaper kind={prefs.wallpaper} />
 
         <Pond
@@ -388,42 +411,42 @@ export default function DesktopPortfolio() {
             accent={accent}
           />
 
-          <div className="flex relative flex-1 min-h-0">
-            <div className={pondMode ? "pointer-events-none" : ""}>  
+          <div className="flex relative flex-1 min-h-0 overflow-hidden">
+            <div className={pondMode ? "pointer-events-none" : ""}>
               <DesktopIcons
                 prefs={prefs}
                 onOpen={(id) => openWindow(id)}
               />
+            </div>
 
-              <div className="absolute inset-0 pointer-events-none">
-                {/* Windows layer */}
-                <AnimatePresence>
-                  {windows
-                    .slice()
-                    .sort((a, b) => a.z - b.z)
-                    .map((w) => (
-                      <DesktopWindow
-                        key={w.id}
-                        win={w}
-                        active={activeId === w.id}
-                        accent={accent}
-                        reduceMotion={prefs.reduceMotion}
-                        onFocus={() => focusWindow(w.id)}
-                        onClose={() => closeWindow(w.id)}
-                        onMinimize={() => toggleMinimize(w.id)}
-                        onMaximize={() => toggleMaximize(w.id)}
-                        onRect={(rect) => updateWindowRect(w.id, rect)}
-                      >
-                        <WindowContent
-                          id={w.id}
-                          onOpen={(id) => openWindow(id)}
-                          prefs={prefs}
-                          setPrefs={setPrefs}
-                        />
-                      </DesktopWindow>
-                    ))}
-                </AnimatePresence>
-              </div>
+            {/* Windows layer — absolute over the full desktop area */}
+            <div className="absolute inset-0 pointer-events-none">
+              <AnimatePresence>
+                {windows
+                  .slice()
+                  .sort((a, b) => a.z - b.z)
+                  .map((w) => (
+                    <DesktopWindow
+                      key={w.id}
+                      win={w}
+                      active={activeId === w.id}
+                      accent={accent}
+                      reduceMotion={prefs.reduceMotion}
+                      onFocus={() => focusWindow(w.id)}
+                      onClose={() => closeWindow(w.id)}
+                      onMinimize={() => toggleMinimize(w.id)}
+                      onMaximize={() => toggleMaximize(w.id)}
+                      onRect={(rect) => updateWindowRect(w.id, rect)}
+                    >
+                      <WindowContent
+                        id={w.id}
+                        onOpen={(id) => openWindow(id)}
+                        prefs={prefs}
+                        setPrefs={setPrefs}
+                      />
+                    </DesktopWindow>
+                  ))}
+              </AnimatePresence>
             </div>
 
             <Dock
@@ -506,7 +529,7 @@ function TopBar({
   const date = now.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 
   return (
-    <div className="sticky top-0 z-20">
+    <div className="relative z-[9999] shrink-0">
       <div className="mx-3 mt-3 rounded-2xl border border-white/10 bg-zinc-950/55 backdrop-blur-xl">
         <div className="flex items-center justify-between px-3 py-2">
           <div className="flex items-center gap-2">
@@ -643,7 +666,7 @@ function Dock({
   };
 
   return (
-    <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-30">
+    <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-[9998]">
       <div className="mx-auto mb-4 w-fit pointer-events-auto">
         <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-zinc-950/55 px-2 py-2 backdrop-blur-xl">
           {dockItems.map((d) => {
@@ -812,11 +835,16 @@ function DesktopWindow({
   return (
     <MotionDiv
       ref={ref}
-      onMouseDown={onFocus}
+      tabIndex={-1}
+      onMouseDown={(e: React.MouseEvent) => {
+        (e.currentTarget as HTMLElement).focus({ preventScroll: true });
+        onFocus();
+      }}
       style={{
         position: "absolute",
         zIndex: win.z,
         ...posStyle,
+        outline: "none",
       }}
       initial={reduceMotion ? undefined : { opacity: 0, scale: 0.98, y: 10 }}
       animate={reduceMotion ? undefined : { opacity: 1, scale: 1, y: 0 }}
