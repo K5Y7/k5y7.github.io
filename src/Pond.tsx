@@ -473,6 +473,7 @@ function WaterPlane({ level, backgroundImage, rippleTex, rippleSimSize }: WaterP
       uTime: { value: 0 },
       uLevel: { value: level },
       uTint: { value: new THREE.Color("#2b74ff") },
+      uAspect: { value: 1.0 },
 
       uSceneTex: { value: null as THREE.Texture | null },
       uHasSceneTex: { value: 0 },
@@ -490,6 +491,7 @@ function WaterPlane({ level, backgroundImage, rippleTex, rippleSimSize }: WaterP
 
     mat.uniforms.uTime.value += dt;
     mat.uniforms.uLevel.value = level;
+    mat.uniforms.uAspect.value = viewport.width / viewport.height;
 
     mat.uniforms.uSceneTex.value = sceneTex;
     mat.uniforms.uHasSceneTex.value = sceneTex ? 1 : 0;
@@ -528,11 +530,12 @@ function WaterPlane({ level, backgroundImage, rippleTex, rippleSimSize }: WaterP
           uniform sampler2D uRippleTex;
           uniform float uHasRipple;
           uniform vec2 uRippleTexel;
-                    
+          uniform float uAspect;
+
           float drift(vec2 p){
             float t = uTime * 0.08;
             float a = 0.015;
-            return sin((p.x*2.5) + t) * a + sin((p.y*2.2) - t*1.2) * a;
+            return sin((p.x * uAspect * 2.5) + t) * a + sin((p.y*2.2) - t*1.2) * a;
           }
 
           float decodeH(float r) { return r * 2.0 - 1.0; }
@@ -594,15 +597,17 @@ function WaterPlane({ level, backgroundImage, rippleTex, rippleSimSize }: WaterP
             col += vec3(0.18, 0.26, 0.32) * highlight;
 
             // A little fresnel-like brightening near edges (adds realism)
-            float distToCenter = distance(vUv, vec2(0.5));
-            float edge = smoothstep(0.20, 0.75, distToCenter);
+            // Aspect-correct the distance so effects are circular, not elliptical on wide screens
+            vec2 fromCenter = (vUv - 0.5) * vec2(uAspect, 1.0);
+            float distToCenter = length(fromCenter);
+            float edge = smoothstep(0.28, 1.06, distToCenter);
             col += vec3(0.06, 0.10, 0.14) * edge * (0.3 + 0.7 * uLevel);
 
             // Opacity grows as water “comes toward you”
             float alpha = 0.06 + 0.48 * uLevel;
 
             // Gentle vignette so it feels like a volume, not a flat overlay
-            float vignette = smoothstep(0.98, 0.45, distToCenter);
+            float vignette = smoothstep(1.38, 0.63, distToCenter);
             alpha *= vignette;
 
             gl_FragColor = vec4(col, alpha);
@@ -684,10 +689,11 @@ function RippleSim({
         uTexel: { value: new THREE.Vector2(1 / simSize, 1 / simSize) },
         uMouse: { value: new THREE.Vector2(-10, -10) },
         uImpulse: { value: 0 },
-        uImpulseRadius: { value: 0.02 }, // in UV units
+        uImpulseRadius: { value: 0.02 }, // in UV units (height-normalized)
         uC: { value: 0.35 }, // wave speed-ish
         uDamping: { value: 0.020 }, // higher = faster fade
         uStrength: { value: strength },
+        uAspect: { value: 1.0 },
       },
       vertexShader: `
         varying vec2 vUv;
@@ -711,6 +717,7 @@ function RippleSim({
         uniform float uC;
         uniform float uDamping;
         uniform float uStrength;
+        uniform float uAspect;
 
         float decodeH(float r) { return r * 2.0 - 1.0; }   // 0..1 -> -1..1
         float encodeH(float h) { return h * 0.5 + 0.5; }   // -1..1 -> 0..1
@@ -723,13 +730,17 @@ function RippleSim({
           float h  = sampleH(uPrev, vUv);
           float h1 = sampleH(uPrevPrev, vUv);
 
-          // Laplacian
-          float l = 0.0;
-          l += sampleH(uPrev, vUv + vec2( uTexel.x, 0.0));
-          l += sampleH(uPrev, vUv + vec2(-uTexel.x, 0.0));
-          l += sampleH(uPrev, vUv + vec2(0.0,  uTexel.y));
-          l += sampleH(uPrev, vUv + vec2(0.0, -uTexel.y));
-          l -= 4.0 * h;
+          // Laplacian — aspect-corrected so waves propagate at equal pixel-space
+          // speed in both directions. On a wide screen one UV-x texel covers more
+          // pixels than one UV-y texel, so we scale the x contribution by 1/aspect²
+          // to compensate and produce circular (not oval) wavefronts.
+          float lx = sampleH(uPrev, vUv + vec2( uTexel.x, 0.0))
+                   + sampleH(uPrev, vUv + vec2(-uTexel.x, 0.0))
+                   - 2.0 * h;
+          float ly = sampleH(uPrev, vUv + vec2(0.0,  uTexel.y))
+                   + sampleH(uPrev, vUv + vec2(0.0, -uTexel.y))
+                   - 2.0 * h;
+          float l = lx / (uAspect * uAspect) + ly;
 
           float next = (2.0 * h - h1) + (uC * uC) * l;
 
@@ -738,8 +749,10 @@ function RippleSim({
           next -= uDamping * vel;
 
           // impulse (splat) based on mouse movement speed
-          // gaussian falloff
-          float d = distance(vUv, uMouse);
+          // gaussian falloff — aspect-corrected so splats are circular on wide screens
+          vec2 diff = vUv - uMouse;
+          diff.x *= uAspect;
+          float d = length(diff);
           float splat = exp(-(d*d) / (uImpulseRadius*uImpulseRadius));
           next += splat * uImpulse * uStrength;
 
@@ -849,6 +862,7 @@ function RippleSim({
     mat.uniforms.uMouse.value.copy(mouseUv.current);
     mat.uniforms.uImpulse.value = impulse.current;
     mat.uniforms.uImpulseRadius.value = impulseRadius.current;
+    mat.uniforms.uAspect.value = gl.domElement.clientWidth / gl.domElement.clientHeight;
 
     // decay impulse so you get discrete “strokes”
     impulse.current *= 0.85;
