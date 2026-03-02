@@ -111,7 +111,6 @@ function PondScene({ phase, backgroundImage, onDrained }: PondSceneProps) {
         rippleTex={rippleTex}
         simSize={simSize}
         maxLeaves={9}
-        spawnEvery={[2.5, 6.5]}
       />
 
       <WaterPlane level={level} backgroundImage={backgroundImage} rippleTex={rippleTex} rippleSimSize={simSize}/>
@@ -121,9 +120,9 @@ function PondScene({ phase, backgroundImage, onDrained }: PondSceneProps) {
 
 
 // -------------------------
-// LeafSystem: occasionally spawns a few floating leaves that drift across the pond.
+// LeafSystem: floating leaves that drift across the pond surface.
 // - Uses an instanced mesh for performance.
-// - Keeps a hard cap (maxLeaves) + randomized spawn intervals so it doesn't crowd.
+// - Fills to maxLeaves on first enable (scattered across viewport), then recycles.
 // -------------------------
 type LeafSystemProps = {
   enabled: boolean;
@@ -131,26 +130,25 @@ type LeafSystemProps = {
   rippleTex?: THREE.Texture | null;
   simSize: number;
   maxLeaves?: number;
-  spawnEvery?: [number, number]; // seconds, [min,max]
 };
 
 type Leaf = {
   id: number;
   x: number;
-  y: number;
+  baseY: number;  // Y anchor; actual Y = baseY + sin-bob (frame-rate independent)
+  baseR: number;  // rotation anchor; actual R = baseR + sin-wobble
   s: number;
-  r: number;
   vx: number;
   wobble: number;
 };
 
-function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEvery = [3, 7] }: LeafSystemProps) {
+function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8 }: LeafSystemProps) {
   const { viewport } = useThree();
   const meshRef = useRef<THREE.InstancedMesh>(null);
 
   const leavesRef = useRef<Leaf[]>([]);
   const idRef = useRef(1);
-  const nextSpawnAt = useRef(0);
+  const filledRef = useRef(false);
 
   const tmpObj = useMemo(() => new THREE.Object3D(), []);
 
@@ -200,6 +198,8 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
     return tex;
   }, []);
 
+  const leafGeo = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
+
   // --- Leaf shader material that samples rippleTex ---
   const leafMat = useMemo(() => {
     if (!leafTex) return null;
@@ -225,11 +225,6 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
         uTilt: { value: 0.10 },    // tilt amount from gradient
       },
       vertexShader: `
-        precision highp float;
-
-        attribute vec3 position;
-        attribute vec2 uv;
-
         uniform sampler2D uRippleTex;
         uniform float uHasRipple;
         uniform vec2 uTexel;
@@ -306,31 +301,20 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
   useEffect(() => {
     if (enabled) return;
     leavesRef.current = [];
-    nextSpawnAt.current = 0;
+    filledRef.current = false;
   }, [enabled]);
 
-  const spawnLeaf = () => {
+  // Spawns a leaf; if x is omitted, scatters it randomly across the viewport width.
+  const spawnLeaf = (x?: number) => {
     const w = viewport.width;
     const h = viewport.height;
-    const margin = 0.65;
-
-    // Avoid crowding: don't spawn if there is already a leaf close to the spawn edge
-    if (leavesRef.current.length >= Math.floor(maxLeaves * 0.7)) {
-      const tooClose = leavesRef.current.some((l) => l.x < -w / 2 + 1.6);
-      if (tooClose) return;
-    }
-
-    const s = THREE.MathUtils.lerp(0.13, 0.26, Math.random());
-    const y = THREE.MathUtils.lerp(-h / 2 + 0.6, h / 2 - 0.6, Math.random());
-    const vx = THREE.MathUtils.lerp(0.10, 0.22, Math.random());
-
     leavesRef.current.push({
       id: idRef.current++,
-      x: -w / 2 - margin,
-      y,
-      s,
-      r: THREE.MathUtils.lerp(-Math.PI, Math.PI, Math.random()),
-      vx,
+      x: x ?? THREE.MathUtils.lerp(-w / 2 + 0.5, w / 2 - 0.5, Math.random()),
+      baseY: THREE.MathUtils.lerp(-h / 2 + 0.6, h / 2 - 0.6, Math.random()),
+      baseR: THREE.MathUtils.lerp(-Math.PI, Math.PI, Math.random()),
+      s: THREE.MathUtils.lerp(0.39, 0.78, Math.random()),
+      vx: THREE.MathUtils.lerp(0.10, 0.22, Math.random()),
       wobble: Math.random() * Math.PI * 2,
     });
   };
@@ -339,56 +323,54 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
     if (!enabled || !meshRef.current || !leafMat || !leafTex) return;
 
     const now = clock.getElapsedTime();
-    // keep uniforms fresh
+
+    // Initial fill: scatter leaves across the whole viewport on first enable
+    if (!filledRef.current) {
+      filledRef.current = true;
+      for (let i = 0; i < maxLeaves; i++) spawnLeaf();
+    }
+
+    // Keep uniforms fresh
     leafMat.uniforms.uViewport.value.set(viewport.width, viewport.height);
     leafMat.uniforms.uRippleTex.value = rippleTex;
     leafMat.uniforms.uHasRipple.value = rippleTex ? 1.0 : 0.0;
 
-    leafMat.uniforms.uOpacity.value = 1.0
+    // Opacity fades in with water level (reaches full at level ~0.33)
+    leafMat.uniforms.uOpacity.value = Math.min(1.0, level * 3.0);
 
-    if (nextSpawnAt.current === 0) {
-    // Spawn quickly once so it never looks "broken" (otherwise you may wait several seconds).
-    const firstDelay = THREE.MathUtils.lerp(0.2, 0.8, Math.random());
-    nextSpawnAt.current = now + firstDelay;
-
-    // Force an immediate first leaf the first time we run
-    if (leavesRef.current.length === 0) {
-      spawnLeaf();
-    }
-  }
-
-    // Spawn at most one leaf per interval, and only if under the cap.
-    if (now >= nextSpawnAt.current && leavesRef.current.length < maxLeaves) {
-      spawnLeaf();
-      nextSpawnAt.current = now + THREE.MathUtils.lerp(spawnEvery[0], spawnEvery[1], Math.random());
-    }
-
-    // Move + bob
+    // Advance horizontal drift only — bob is derived from time, not accumulated
     for (const l of leavesRef.current) {
       l.x += l.vx * dt;
-      l.y += Math.sin(now * 0.35 + l.wobble) * 0.03 * dt * 60.0;
-      l.r += Math.sin(now * 0.25 + l.wobble) * 0.004 * dt * 60.0;
     }
 
     const w = viewport.width;
     const h = viewport.height;
     const margin = 0.8;
-    // Cull offscreen
-    leavesRef.current = leavesRef.current.filter(
-      (l) => l.x < w / 2 + margin && l.y > -h / 2 - margin && l.y < h / 2 + margin
-    );
+
+    // Recycle leaves that exit right — teleport to left with fresh random Y/wobble/speed
+    for (const l of leavesRef.current) {
+      if (l.x > w / 2 + margin) {
+        l.x = -w / 2 - margin;
+        l.baseY = THREE.MathUtils.lerp(-h / 2 + 0.6, h / 2 - 0.6, Math.random());
+        l.wobble = Math.random() * Math.PI * 2;
+        l.vx = THREE.MathUtils.lerp(0.10, 0.22, Math.random());
+      }
+    }
 
     // Write instance matrices
     const count = Math.min(leavesRef.current.length, maxLeaves);
     const waterZ = THREE.MathUtils.lerp(-0.35, 0.0, level);
-
     const EPS = 0.002; // tiny lift to avoid z-fighting
 
     for (let i = 0; i < count; i++) {
       const l = leavesRef.current[i];
-      // Always keep leaves just *under* the water surface
-      tmpObj.position.set(l.x, l.y, waterZ + EPS);
-      tmpObj.rotation.set(0, 0, l.r);
+
+      // Bob and rotation derived from absolute time — perfectly frame-rate independent
+      const bobY = Math.sin(now * 0.35 + l.wobble) * 0.08;
+      const bobR = Math.sin(now * 0.25 + l.wobble) * 0.18;
+
+      tmpObj.position.set(l.x, l.baseY + bobY, waterZ + EPS);
+      tmpObj.rotation.set(0, 0, l.baseR + bobR);
       tmpObj.scale.set(l.s, l.s, 1);
       tmpObj.updateMatrix();
       meshRef.current.setMatrixAt(i, tmpObj.matrix);
@@ -403,14 +385,10 @@ function LeafSystem({ enabled, level, rippleTex, simSize, maxLeaves = 8, spawnEv
   return (
     <instancedMesh
       ref={meshRef}
-      // r3f InstancedMesh ctor signature: (geometry, material, count)
-      args={[null as any, null as any, maxLeaves]}
+      args={[leafGeo, leafMat, maxLeaves]}
       frustumCulled={false}
       renderOrder={2}
-    >
-      <planeGeometry args={[1, 1]} />
-      <primitive object={leafMat} attach="material" />
-    </instancedMesh>
+    />
   );
 }
 
